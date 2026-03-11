@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>03 — Valkey Streams Fundamentals — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/pubsub-streaming/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div></div></nav>
+<article>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/pubsub-streaming/">Pub/Sub &amp; Streaming</a> → 03 Valkey Streams</div>
+<div class="meta"><span class="diff-medium">Intermediate</span><span class="lang">Python</span><span class="lang">~20 min</span></div>
+<h1>Valkey Streams <span class="gradient">Fundamentals</span></h1>
+<p class="lead">Durable, ordered message queues with XADD, XREAD, and XRANGE. Unlike Pub/Sub, Streams persist messages — perfect for guaranteed delivery and replay.</p>
+<h2>Pub/Sub vs Streams</h2>
+<table><tr><th>Feature</th><th>Pub/Sub</th><th>Streams</th></tr>
+<tr><td>Durability</td><td>Ephemeral</td><td>Persistent until trimmed</td></tr>
+<tr><td>Replay</td><td>No</td><td>Yes — XRANGE</td></tr>
+<tr><td>Consumer groups</td><td>No</td><td>Yes</td></tr>
+<tr><td>Ordering</td><td>No guarantees</td><td>Strict by ID</td></tr>
+<tr><td>Backpressure</td><td>None</td><td>MAXLEN trimming</td></tr></table>
+<h2>Step 1: Add Messages</h2>
+<pre><code><span class="keyword">import</span> redis, json, time
+client = redis.Redis(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>, decode_responses=<span class="keyword">True</span>)
+
+<span class="comment"># XADD — append to stream</span>
+entry_id = client.xadd(<span class="string">"ai:tasks"</span>, {
+    <span class="string">"type"</span>: <span class="string">"embedding"</span>,
+    <span class="string">"text"</span>: <span class="string">"Hello world"</span>,
+    <span class="string">"model"</span>: <span class="string">"text-embedding-3-small"</span>,
+})
+<span class="func">print</span>(<span class="string">f"Added: {entry_id}"</span>)
+
+<span class="comment"># With MAXLEN cap</span>
+client.xadd(<span class="string">"ai:tasks"</span>, {<span class="string">"type"</span>: <span class="string">"completion"</span>}, maxlen=<span class="num">10000</span>)</code></pre>
+<h2>Step 2: Read Messages</h2>
+<pre><code><span class="comment"># XREAD — blocking read for new messages</span>
+entries = client.xread({<span class="string">"ai:tasks"</span>: <span class="string">"0-0"</span>}, count=<span class="num">10</span>, block=<span class="num">5000</span>)
+<span class="keyword">for</span> stream, messages <span class="keyword">in</span> entries:
+    <span class="keyword">for</span> msg_id, data <span class="keyword">in</span> messages:
+        <span class="func">print</span>(<span class="string">f"[{msg_id}] {data}"</span>)
+
+<span class="comment"># XRANGE — replay from beginning</span>
+messages = client.xrange(<span class="string">"ai:tasks"</span>, min=<span class="string">"-"</span>, max=<span class="string">"+"</span>, count=<span class="num">5</span>)
+
+<span class="comment"># XREVRANGE — newest first</span>
+latest = client.xrevrange(<span class="string">"ai:tasks"</span>, max=<span class="string">"+"</span>, min=<span class="string">"-"</span>, count=<span class="num">1</span>)</code></pre>
+<h2>Step 3: Stream Management</h2>
+<pre><code>length = client.xlen(<span class="string">"ai:tasks"</span>)
+info = client.xinfo_stream(<span class="string">"ai:tasks"</span>)
+client.xtrim(<span class="string">"ai:tasks"</span>, maxlen=<span class="num">1000</span>)</code></pre>
+<h2>Step 4: Consumer Loop</h2>
+<pre><code><span class="keyword">def</span> <span class="func">consume</span>(stream_key):
+    last_id = <span class="string">"$"</span>  <span class="comment"># Only new messages</span>
+    <span class="keyword">while</span> <span class="keyword">True</span>:
+        entries = client.xread({stream_key: last_id}, count=<span class="num">10</span>, block=<span class="num">2000</span>)
+        <span class="keyword">if not</span> entries: <span class="keyword">continue</span>
+        <span class="keyword">for</span> stream, messages <span class="keyword">in</span> entries:
+            <span class="keyword">for</span> msg_id, data <span class="keyword">in</span> messages:
+                <span class="func">print</span>(<span class="string">f"Processing: {data}"</span>)
+                last_id = msg_id</code></pre>
+<div class="callout"><p><strong>Key:</strong> Use <code>"$"</code> for new messages only, <code>"0-0"</code> to replay from start.</p></div>
+<table><tr><th>Command</th><th>Purpose</th><th>Latency</th></tr>
+<tr><td><code>XADD</code></td><td>Append message</td><td>~0.1ms</td></tr>
+<tr><td><code>XREAD BLOCK</code></td><td>Wait for new</td><td>~0.1ms + block</td></tr>
+<tr><td><code>XRANGE</code></td><td>Read range / replay</td><td>~0.1ms</td></tr>
+<tr><td><code>XLEN</code></td><td>Stream length</td><td>~0.1ms</td></tr>
+<tr><td><code>XTRIM</code></td><td>Cap stream size</td><td>~0.1ms</td></tr></table>
+<div class="nav-prev-next">
+<a href="02-streaming-llm-tokens.html" class="prev"><span class="label">← Previous</span><span class="title">02 — Streaming LLM Tokens</span></a>
+<a href="04-consumer-groups.html" class="next"><span class="label">Next →</span><span class="title">04 — Consumer Groups</span></a>
+</div>
+</article></body></html>

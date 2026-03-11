@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>01 — Getting Started with Pub/Sub — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
+<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/pubsub-streaming/">Cookbooks</a><a href="/demo/pubsub-streaming.html">Demo</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div>
+</div></nav>
+
+<article>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/pubsub-streaming/">Pub/Sub & Streaming</a> → 01 Getting Started</div>
+<div class="meta"><span class="diff-easy">Beginner</span><span class="lang">Python</span><span class="lang">~5 min</span></div>
+
+<h1>Getting Started with <span class="gradient">Pub/Sub</span></h1>
+<p class="lead">Send your first real-time message with Valkey Pub/Sub. By the end you'll have a working publisher and subscriber communicating in real-time.</p>
+
+<h2>What is Pub/Sub?</h2>
+<p>Valkey Pub/Sub is a fire-and-forget messaging system. Publishers send messages to <strong>channels</strong>, and any number of subscribers listening on that channel receive them instantly. It's perfect for:</p>
+<ul>
+<li><strong>Streaming LLM tokens</strong> to multiple clients simultaneously</li>
+<li><strong>AI agent events</strong> — broadcasting tool completions and state changes</li>
+<li><strong>Real-time notifications</strong> — alerting dashboards of new predictions</li>
+</ul>
+
+<div class="callout">
+<p><strong>Pub/Sub vs Streams:</strong> Pub/Sub is ephemeral — if no one is listening, messages are lost. Valkey Streams (Cookbook 03) are durable — messages persist and can be replayed. Use Pub/Sub for live broadcasting, Streams for guaranteed delivery.</p>
+</div>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>Docker installed (or a running Valkey instance)</li>
+<li>Python 3.9+</li>
+</ul>
+
+<h2>Step 1: Start Valkey</h2>
+<pre><code>docker run -d --name valkey -p 6379:6379 valkey/valkey:latest</code></pre>
+
+<h2>Step 2: Install Dependencies</h2>
+<pre><code>pip install redis</code></pre>
+
+<h2>Step 3: Create a Publisher</h2>
+<pre><code><span class="keyword">import</span> redis
+<span class="keyword">import</span> time
+<span class="keyword">import</span> json
+
+client = redis.Redis(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>, decode_responses=<span class="keyword">True</span>)
+
+<span class="keyword">def</span> <span class="func">publish_message</span>(channel: str, message: dict):
+    <span class="string">"""Publish a JSON message to a channel."""</span>
+    payload = json.dumps(message)
+    num_subscribers = client.publish(channel, payload)
+    <span class="func">print</span>(<span class="string">f"Published to {channel} → {num_subscribers} subscriber(s)"</span>)
+    <span class="keyword">return</span> num_subscribers
+
+<span class="comment"># Publish some messages</span>
+publish_message(<span class="string">"ai:events"</span>, {
+    <span class="string">"type"</span>: <span class="string">"prediction"</span>,
+    <span class="string">"model"</span>: <span class="string">"gpt-4"</span>,
+    <span class="string">"result"</span>: <span class="string">"positive"</span>,
+    <span class="string">"confidence"</span>: <span class="num">0.95</span>,
+    <span class="string">"timestamp"</span>: time.time(),
+})
+<span class="comment"># Published to ai:events → 0 subscriber(s)  (no one listening yet)</span></code></pre>
+
+<h2>Step 4: Create a Subscriber</h2>
+<p>Run this in a <strong>separate terminal</strong> — subscribers block while waiting for messages:</p>
+<pre><code><span class="keyword">import</span> redis
+<span class="keyword">import</span> json
+
+client = redis.Redis(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>, decode_responses=<span class="keyword">True</span>)
+
+<span class="comment"># Create a Pub/Sub object</span>
+pubsub = client.pubsub()
+
+<span class="comment"># Subscribe to the channel</span>
+pubsub.subscribe(<span class="string">"ai:events"</span>)
+<span class="func">print</span>(<span class="string">"Subscribed to ai:events — waiting for messages..."</span>)
+
+<span class="comment"># Listen for messages (blocks)</span>
+<span class="keyword">for</span> message <span class="keyword">in</span> pubsub.listen():
+    <span class="keyword">if</span> message[<span class="string">"type"</span>] == <span class="string">"message"</span>:
+        data = json.loads(message[<span class="string">"data"</span>])
+        <span class="func">print</span>(<span class="string">f"Received: {data}"</span>)
+
+<span class="comment"># Output when publisher sends a message:</span>
+<span class="comment"># Received: {'type': 'prediction', 'model': 'gpt-4', 'result': 'positive', ...}</span></code></pre>
+
+<h2>Step 5: Pattern Subscriptions</h2>
+<p>Subscribe to multiple channels using glob patterns:</p>
+<pre><code><span class="comment"># Subscribe to ALL ai:* channels at once</span>
+pubsub.psubscribe(<span class="string">"ai:*"</span>)
+
+<span class="comment"># This matches:</span>
+<span class="comment">#   ai:events</span>
+<span class="comment">#   ai:predictions</span>
+<span class="comment">#   ai:agent:tool_calls</span>
+<span class="comment">#   ai:llm:tokens</span>
+
+<span class="keyword">for</span> message <span class="keyword">in</span> pubsub.listen():
+    <span class="keyword">if</span> message[<span class="string">"type"</span>] == <span class="string">"pmessage"</span>:
+        channel = message[<span class="string">"channel"</span>]
+        data = json.loads(message[<span class="string">"data"</span>])
+        <span class="func">print</span>(<span class="string">f"[{channel}] {data}"</span>)</code></pre>
+
+<h2>Step 6: Non-Blocking Subscriber</h2>
+<p>For applications that need to do other work while listening:</p>
+<pre><code><span class="keyword">import</span> threading
+
+<span class="keyword">def</span> <span class="func">message_handler</span>(message):
+    <span class="string">"""Called for each message received."""</span>
+    <span class="keyword">if</span> message[<span class="string">"type"</span>] == <span class="string">"message"</span>:
+        data = json.loads(message[<span class="string">"data"</span>])
+        <span class="func">print</span>(<span class="string">f"Handler: {data}"</span>)
+
+<span class="comment"># Subscribe with a callback (non-blocking)</span>
+pubsub.subscribe(**{<span class="string">"ai:events"</span>: message_handler})
+
+<span class="comment"># Run in background thread</span>
+thread = pubsub.run_in_thread(sleep_time=<span class="num">0.01</span>)
+<span class="func">print</span>(<span class="string">"Subscriber running in background"</span>)
+
+<span class="comment"># Do other work...</span>
+time.sleep(<span class="num">10</span>)
+
+<span class="comment"># Stop when done</span>
+thread.stop()</code></pre>
+
+<h2>How It Works</h2>
+<table>
+<tr><th>Operation</th><th>Valkey Command</th><th>Latency</th></tr>
+<tr><td>Publish message</td><td><code>PUBLISH channel message</code></td><td>~0.1ms</td></tr>
+<tr><td>Subscribe to channel</td><td><code>SUBSCRIBE channel</code></td><td>~0.1ms</td></tr>
+<tr><td>Pattern subscribe</td><td><code>PSUBSCRIBE pattern</code></td><td>~0.1ms</td></tr>
+<tr><td>Unsubscribe</td><td><code>UNSUBSCRIBE channel</code></td><td>~0.1ms</td></tr>
+<tr><td>Check active channels</td><td><code>PUBSUB CHANNELS</code></td><td>~0.1ms</td></tr>
+<tr><td>Count subscribers</td><td><code>PUBSUB NUMSUB channel</code></td><td>~0.1ms</td></tr>
+</table>
+
+<div class="callout">
+<p><strong>What's Next:</strong> In the next cookbook, we'll use Pub/Sub to stream LLM tokens in real-time — broadcasting each token as it arrives from the model to multiple connected clients.</p>
+</div>
+
+<div class="nav-prev-next">
+<div></div>
+<a href="02-streaming-llm-tokens.html" class="next">
+<span class="label">Next →</span>
+<span class="title">02 — Streaming LLM Tokens</span>
+</a>
+</div>
+</article>
+</body>
+</html>

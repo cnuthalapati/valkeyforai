@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pub/Sub & Streaming Demo — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0a;--card:rgba(255,255,255,.04);--brd:rgba(255,255,255,.08);--t1:#f5f5f7;--t2:rgba(245,245,247,.6);--t3:rgba(245,245,247,.4);--accent:#06b6d4;--accent2:#0ea5e9;--radius:12px;--font:'Inter',system-ui,sans-serif}
+body{font-family:var(--font);background:var(--bg);color:var(--t1);line-height:1.5;padding:24px}
+h1{font-size:28px;font-weight:900;letter-spacing:-.03em;margin-bottom:4px}
+h1 span{color:var(--accent)}
+.subtitle{font-size:14px;color:var(--t2);margin-bottom:24px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+@media(max-width:700px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--brd);border-radius:var(--radius);overflow:hidden}
+.panel-header{padding:14px 18px;border-bottom:1px solid var(--brd);display:flex;align-items:center;justify-content:space-between}
+.panel-header h3{font-size:14px;font-weight:700}
+.panel-body{padding:16px 18px}
+.log{font-family:'SF Mono','Fira Code',monospace;font-size:12px;line-height:1.8;max-height:300px;overflow-y:auto;color:var(--t2)}
+.log .msg{padding:3px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+.log .msg .ch{color:var(--accent);font-weight:600}
+.log .msg .ts{color:var(--t3);font-size:10px;margin-left:8px}
+.log .msg .data{color:#a5f3fc}
+.log .system{color:#fbbf24;font-style:italic}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+input,select{background:rgba(255,255,255,.06);border:1px solid var(--brd);border-radius:8px;padding:8px 12px;color:var(--t1);font-family:var(--font);font-size:13px;outline:none}
+input:focus,select:focus{border-color:var(--accent)}
+input::placeholder{color:var(--t3)}
+button{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;border-radius:8px;padding:8px 18px;font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;transition:.2s}
+button:hover{transform:translateY(-1px);box-shadow:0 2px 12px rgba(6,182,212,.3)}
+button.secondary{background:rgba(255,255,255,.06);color:var(--t1);border:1px solid var(--brd)}
+button.secondary:hover{background:rgba(255,255,255,.1)}
+.stat-row{display:flex;gap:16px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--brd);border-radius:var(--radius);padding:14px 18px;flex:1;text-align:center}
+.stat .num{font-size:28px;font-weight:900;color:var(--accent)}
+.stat .label{font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.05em}
+.mode-tabs{display:flex;gap:4px;background:rgba(255,255,255,.04);border-radius:8px;padding:3px;margin-bottom:16px}
+.mode-tab{padding:6px 16px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;color:var(--t2);transition:.2s}
+.mode-tab.active{background:var(--accent);color:#fff}
+.token-stream{font-family:'SF Mono','Fira Code',monospace;font-size:14px;line-height:1.8;min-height:60px;color:#a5f3fc;padding:12px;background:rgba(0,0,0,.3);border-radius:8px;margin-bottom:12px}
+.token-stream .cursor{animation:blink 1s infinite;color:var(--accent)}
+@keyframes blink{0%,50%{opacity:1}51%,100%{opacity:0}}
+</style>
+</head>
+<body>
+<h1>Pub/Sub & <span>Streaming</span> Demo</h1>
+<p class="subtitle">Simulate Valkey Pub/Sub and Streams messaging patterns — publish, subscribe, and stream LLM tokens in real-time.</p>
+
+<div class="stat-row">
+<div class="stat"><div class="num" id="pubCount">0</div><div class="label">Published</div></div>
+<div class="stat"><div class="num" id="subCount">0</div><div class="label">Received</div></div>
+<div class="stat"><div class="num" id="channelCount">0</div><div class="label">Channels</div></div>
+<div class="stat"><div class="num" id="latency">0.1</div><div class="label">Latency (ms)</div></div>
+</div>
+
+<div class="mode-tabs">
+<div class="mode-tab active" onclick="setMode('pubsub')">Pub/Sub</div>
+<div class="mode-tab" onclick="setMode('stream')">Streams</div>
+<div class="mode-tab" onclick="setMode('llm')">LLM Token Streaming</div>
+</div>
+
+<!-- PUB/SUB MODE -->
+<div id="mode-pubsub">
+<div class="grid">
+<div class="panel">
+<div class="panel-header"><h3>📤 Publisher</h3></div>
+<div class="panel-body">
+<div class="controls">
+<input id="pubChannel" placeholder="Channel name" value="ai:events" style="flex:1">
+<input id="pubMessage" placeholder="Message" value='{"type":"prediction","score":0.95}' style="flex:2">
+<button onclick="publishMsg()">PUBLISH</button>
+</div>
+<div class="controls">
+<button class="secondary" onclick="autoPub()">Auto-publish (5/sec)</button>
+<button class="secondary" onclick="stopAuto()">Stop</button>
+</div>
+<div class="log" id="pubLog"></div>
+</div>
+</div>
+<div class="panel">
+<div class="panel-header"><h3>📥 Subscriber</h3><button class="secondary" onclick="clearSubLog()">Clear</button></div>
+<div class="panel-body">
+<div class="controls">
+<input id="subChannel" placeholder="Subscribe to..." value="ai:events" style="flex:1">
+<button onclick="subscribeCh()">SUBSCRIBE</button>
+<button class="secondary" onclick="psubscribe()">PSUBSCRIBE ai:*</button>
+</div>
+<div class="log" id="subLog"><div class="system">Not subscribed yet. Click SUBSCRIBE to start.</div></div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- STREAMS MODE -->
+<div id="mode-stream" style="display:none">
+<div class="grid">
+<div class="panel">
+<div class="panel-header"><h3>📝 XADD Producer</h3></div>
+<div class="panel-body">
+<div class="controls">
+<input id="streamKey" placeholder="Stream" value="ai:tasks" style="flex:1">
+<input id="streamData" placeholder="Data" value='type=embedding text="hello world"' style="flex:2">
+<button onclick="xadd()">XADD</button>
+</div>
+<div class="controls">
+<button class="secondary" onclick="xaddBatch()">Batch XADD (100)</button>
+</div>
+<div class="log" id="streamProdLog"></div>
+</div>
+</div>
+<div class="panel">
+<div class="panel-header"><h3>📖 XREAD Consumer</h3><button class="secondary" onclick="clearStreamLog()">Clear</button></div>
+<div class="panel-body">
+<div class="controls">
+<button onclick="xread()">XREAD (latest 10)</button>
+<button class="secondary" onclick="xreadLoop()">Start Consumer Loop</button>
+<button class="secondary" onclick="stopLoop()">Stop</button>
+</div>
+<div class="log" id="streamConLog"><div class="system">Click XREAD to read messages.</div></div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- LLM TOKEN MODE -->
+<div id="mode-llm" style="display:none">
+<div class="panel">
+<div class="panel-header"><h3>🤖 LLM Token Streaming Simulation</h3></div>
+<div class="panel-body">
+<div class="controls">
+<select id="llmPrompt">
+<option value="0">What is Valkey?</option>
+<option value="1">Explain Pub/Sub in simple terms</option>
+<option value="2">How do Valkey Streams work?</option>
+</select>
+<button onclick="startLLMStream()">Stream Response</button>
+<button class="secondary" onclick="startMultiClient()">3 Clients (Fan-Out)</button>
+</div>
+<p style="font-size:12px;color:var(--t3);margin:8px 0">Response (tokens arrive via PUBLISH):</p>
+<div class="token-stream" id="llmOutput"><span class="cursor">▊</span></div>
+<div id="multiClients" style="display:none;margin-top:12px">
+<div class="grid" style="grid-template-columns:1fr 1fr 1fr">
+<div class="panel"><div class="panel-header"><h3>Client A</h3></div><div class="panel-body"><div class="token-stream" id="clientA"><span class="cursor">▊</span></div></div></div>
+<div class="panel"><div class="panel-header"><h3>Client B</h3></div><div class="panel-body"><div class="token-stream" id="clientB"><span class="cursor">▊</span></div></div></div>
+<div class="panel"><div class="panel-header"><h3>Client C</h3></div><div class="panel-body"><div class="token-stream" id="clientC"><span class="cursor">▊</span></div></div></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<script>
+let published=0,received=0,channels=new Set(),autoInterval=null,loopInterval=null,streamSeq=0;
+const responses=[
+["Valkey"," is"," an"," open","-source",","," high","-performance"," in","-memory"," data"," store","."," It"," supports"," strings",","," hashes",","," lists",","," sets",","," sorted"," sets",","," streams",","," and"," more","."," It's"," the"," community","-driven"," successor"," to"," Redis","."],
+["Pub","/Sub"," stands"," for"," Publish","/"," Subscribe","."," Think"," of"," it"," like"," a"," radio"," station",":"," the"," DJ"," broadcasts"," ("," publishes",")"," to"," a"," channel",","," and"," anyone"," tuned"," in"," ("," subscribed",")"," hears"," it"," instantly","."," If"," nobody's"," listening",","," the"," message"," just"," disappears","."],
+["Valkey"," Streams"," are"," durable"," message"," queues","."," Unlike"," Pub","/Sub",","," messages"," persist"," until"," you"," delete"," them","."," You"," can"," replay"," old"," messages"," with"," XRANGE",","," read"," new"," ones"," with"," XREAD",","," and"," distribute"," work"," across"," workers"," with"," consumer"," groups","."]
+];
+function ts(){return new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit',fractionalSecondDigits:3})}
+function addLog(el,html){const d=document.createElement('div');d.className='msg';d.innerHTML=html;el.appendChild(d);el.scrollTop=el.scrollHeight}
+function setMode(m){document.querySelectorAll('.mode-tab').forEach((t,i)=>{t.classList.toggle('active',['pubsub','stream','llm'][i]===m)});['pubsub','stream','llm'].forEach(id=>{document.getElementById('mode-'+id).style.display=id===m?'block':'none'})}
+function updateStats(){document.getElementById('pubCount').textContent=published;document.getElementById('subCount').textContent=received;document.getElementById('channelCount').textContent=channels.size;document.getElementById('latency').textContent=(Math.random()*0.15+0.05).toFixed(2)}
+function publishMsg(){const ch=document.getElementById('pubChannel').value||'ai:events';const msg=document.getElementById('pubMessage').value||'{}';channels.add(ch);published++;addLog(document.getElementById('pubLog'),`<span class="ch">PUBLISH ${ch}</span> <span class="data">${msg}</span><span class="ts">${ts()}</span>`);received++;addLog(document.getElementById('subLog'),`<span class="ch">[${ch}]</span> <span class="data">${msg}</span><span class="ts">${ts()}</span>`);updateStats()}
+function subscribeCh(){const ch=document.getElementById('subChannel').value;channels.add(ch);document.getElementById('subLog').innerHTML='';addLog(document.getElementById('subLog'),`<span class="system">Subscribed to ${ch} — waiting for messages...</span>`);updateStats()}
+function psubscribe(){channels.add('ai:*');document.getElementById('subLog').innerHTML='';addLog(document.getElementById('subLog'),`<span class="system">PSUBSCRIBE ai:* — pattern subscription active</span>`);updateStats()}
+function autoPub(){stopAuto();let i=0;autoInterval=setInterval(()=>{document.getElementById('pubMessage').value=JSON.stringify({type:'event',seq:i++,score:+(Math.random()).toFixed(3)});publishMsg()},200)}
+function stopAuto(){if(autoInterval){clearInterval(autoInterval);autoInterval=null}}
+function clearSubLog(){document.getElementById('subLog').innerHTML=''}
+function xadd(){const key=document.getElementById('streamKey').value;const data=document.getElementById('streamData').value;streamSeq++;const id=Date.now()+'-'+streamSeq;published++;addLog(document.getElementById('streamProdLog'),`<span class="ch">XADD ${key} * </span><span class="data">${data}</span><span class="ts">${id}</span>`);updateStats()}
+function xaddBatch(){for(let i=0;i<100;i++){streamSeq++;published++}addLog(document.getElementById('streamProdLog'),`<span class="ch">Pipeline XADD x100</span><span class="ts">~0.5ms</span>`);updateStats()}
+function xread(){received+=3;addLog(document.getElementById('streamConLog'),`<span class="ch">XREAD COUNT 10</span> <span class="data">→ 3 entries</span><span class="ts">${ts()}</span>`);for(let i=0;i<3;i++){addLog(document.getElementById('streamConLog'),`  <span class="ts">${Date.now()-i*100}-${i}</span> <span class="data">type=embedding text="sample ${i}"</span>`)}updateStats()}
+function xreadLoop(){stopLoop();loopInterval=setInterval(()=>{const n=Math.floor(Math.random()*5)+1;received+=n;addLog(document.getElementById('streamConLog'),`<span class="ch">XREAD BLOCK 1000</span> → <span class="data">${n} new entries</span><span class="ts">${ts()}</span>`);updateStats()},1500)}
+function stopLoop(){if(loopInterval){clearInterval(loopInterval);loopInterval=null}}
+function clearStreamLog(){document.getElementById('streamConLog').innerHTML=''}
+function startLLMStream(){const idx=+document.getElementById('llmPrompt').value;const tokens=responses[idx];const el=document.getElementById('llmOutput');el.innerHTML='';document.getElementById('multiClients').style.display='none';let i=0;channels.add('llm:stream:demo');const iv=setInterval(()=>{if(i>=tokens.length){el.innerHTML+=`<br><span style="color:#10b981">✓ ${tokens.length} tokens delivered</span>`;clearInterval(iv);return}el.innerHTML+=tokens[i];published++;received++;i++;updateStats()},60)}
+function startMultiClient(){const idx=+document.getElementById('llmPrompt').value;const tokens=responses[idx];const main=document.getElementById('llmOutput');const a=document.getElementById('clientA');const b=document.getElementById('clientB');const c=document.getElementById('clientC');main.innerHTML='';a.innerHTML='';b.innerHTML='';c.innerHTML='';document.getElementById('multiClients').style.display='block';channels.add('llm:stream:demo');let i=0;const iv=setInterval(()=>{if(i>=tokens.length){[main,a,b,c].forEach(el=>el.innerHTML+=`<br><span style="color:#10b981">✓ done</span>`);clearInterval(iv);return}const tok=tokens[i];main.innerHTML+=tok;a.innerHTML+=tok;b.innerHTML+=tok;c.innerHTML+=tok;published++;received+=3;i++;updateStats()},60)}
+</script>
+</body>
+</html>

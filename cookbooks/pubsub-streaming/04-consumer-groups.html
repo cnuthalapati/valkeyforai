@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>04 — Consumer Groups — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/pubsub-streaming/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div></div></nav>
+<article>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/pubsub-streaming/">Pub/Sub &amp; Streaming</a> → 04 Consumer Groups</div>
+<div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~25 min</span></div>
+<h1>Consumer <span class="gradient">Groups</span></h1>
+<p class="lead">Distribute stream processing across multiple workers. Each message goes to exactly one consumer in the group — perfect for parallel AI task processing.</p>
+<h2>Why Consumer Groups?</h2>
+<p>With plain XREAD, every consumer gets every message. With consumer groups, messages are distributed — enabling parallel processing of AI tasks like embeddings, completions, and tool calls.</p>
+<h2>Step 1: Create a Group</h2>
+<pre><code><span class="keyword">import</span> redis
+client = redis.Redis(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>, decode_responses=<span class="keyword">True</span>)
+
+<span class="keyword">try</span>:
+    client.xgroup_create(<span class="string">"ai:tasks"</span>, <span class="string">"workers"</span>, id=<span class="string">"0"</span>, mkstream=<span class="keyword">True</span>)
+<span class="keyword">except</span> redis.ResponseError:
+    <span class="keyword">pass</span>  <span class="comment"># Group already exists</span></code></pre>
+<h2>Step 2: Consume from Group</h2>
+<pre><code><span class="keyword">def</span> <span class="func">worker</span>(worker_name: str):
+    <span class="keyword">while</span> <span class="keyword">True</span>:
+        entries = client.xreadgroup(
+            <span class="string">"workers"</span>, worker_name,
+            {<span class="string">"ai:tasks"</span>: <span class="string">">"</span>},
+            count=<span class="num">5</span>, block=<span class="num">2000</span>,
+        )
+        <span class="keyword">if not</span> entries: <span class="keyword">continue</span>
+        <span class="keyword">for</span> stream, messages <span class="keyword">in</span> entries:
+            <span class="keyword">for</span> msg_id, data <span class="keyword">in</span> messages:
+                <span class="func">print</span>(<span class="string">f"[{worker_name}] Processing: {data}"</span>)
+                <span class="comment"># Process the task...</span>
+                client.xack(<span class="string">"ai:tasks"</span>, <span class="string">"workers"</span>, msg_id)</code></pre>
+<h2>Step 3: Handle Pending Messages</h2>
+<pre><code><span class="comment"># Check unacknowledged messages</span>
+pending = client.xpending(<span class="string">"ai:tasks"</span>, <span class="string">"workers"</span>)
+<span class="func">print</span>(<span class="string">f"Pending: {pending}"</span>)
+
+<span class="comment"># Claim stuck messages (idle > 30s)</span>
+claimed = client.xclaim(
+    <span class="string">"ai:tasks"</span>, <span class="string">"workers"</span>, <span class="string">"worker-2"</span>,
+    min_idle_time=<span class="num">30000</span>,
+    message_ids=[<span class="string">"1710000000000-0"</span>],
+)</code></pre>
+<div class="callout"><p><strong>At-least-once delivery:</strong> Messages stay pending until XACK. If a worker crashes, use XPENDING + XCLAIM to reassign to a healthy worker.</p></div>
+<table><tr><th>Command</th><th>Purpose</th></tr>
+<tr><td><code>XGROUP CREATE</code></td><td>Create consumer group</td></tr>
+<tr><td><code>XREADGROUP</code></td><td>Read as group member</td></tr>
+<tr><td><code>XACK</code></td><td>Acknowledge processing</td></tr>
+<tr><td><code>XPENDING</code></td><td>List unacknowledged</td></tr>
+<tr><td><code>XCLAIM</code></td><td>Reassign stuck messages</td></tr></table>
+<div class="nav-prev-next">
+<a href="03-valkey-streams.html" class="prev"><span class="label">← Previous</span><span class="title">03 — Valkey Streams</span></a>
+<a href="05-fan-out-patterns.html" class="next"><span class="label">Next →</span><span class="title">05 — Fan-Out Patterns</span></a>
+</div>
+</article></body></html>

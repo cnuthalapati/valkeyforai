@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pub/Sub & Streaming — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../use-case.css">
+<style>:root{--accent-color:#06b6d4;--accent-color2:#0ea5e9;--accent-gradient:linear-gradient(135deg,#06b6d4,#0ea5e9);--accent-bg:linear-gradient(135deg,#06b6d4,#0ea5e9);--accent-glow:rgba(6,182,212,.18)}.btn-primary{background:linear-gradient(135deg,#06b6d4,#0ea5e9)}.btn-primary:hover{box-shadow:0 4px 20px rgba(6,182,212,.35)}.uc-breadcrumb a{color:#06b6d4}</style>
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+  <a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
+  <div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/use-cases/pubsub-streaming/">Pub/Sub</a><a href="/demo/pubsub-streaming.html">Live Demo</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div>
+</div></nav>
+
+<div class="uc-hero">
+  <div class="uc-breadcrumb"><a href="/">Home</a> &rarr; <a href="/#use-cases">Use Cases</a> &rarr; Pub/Sub &amp; Streaming</div>
+  <div class="uc-icon-wrap" style="background:linear-gradient(135deg,#06b6d4,#0ea5e9)">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+  </div>
+  <h1>Pub/Sub &amp;<br><span>Streaming</span></h1>
+  <p>Real-time messaging for AI workloads. Broadcast LLM tokens, fan out agent events, and build durable task queues — all with Valkey Pub/Sub and Streams.</p>
+  <div class="uc-hero-tags"><span>Pub/Sub</span><span>Streams</span><span>Real-time</span><span>Fan-Out</span><span>Consumer Groups</span></div>
+</div>
+
+<div class="uc-main">
+  <div class="uc-panel">
+    <div class="uc-panel-header">
+      <h2><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg> Cookbooks</h2>
+      <p>6 guides from basic PUBLISH/SUBSCRIBE to production consumer groups</p>
+    </div>
+    <div class="uc-panel-body">
+      <ul class="cb-list">
+        <li class="cb-item"><a href="/cookbooks/pubsub-streaming/01-getting-started.html"><span class="cb-num">01</span><div class="cb-info"><h4>Getting Started with Pub/Sub</h4><p>PUBLISH, SUBSCRIBE, and pattern matching</p><div class="cb-badges"><span class="cb-badge easy">Beginner</span><span class="cb-badge time">~5 min</span></div></div></a></li>
+        <li class="cb-item"><a href="/cookbooks/pubsub-streaming/02-streaming-llm-tokens.html"><span class="cb-num">02</span><div class="cb-info"><h4>Streaming LLM Tokens</h4><p>Broadcast token-by-token LLM responses to multiple clients</p><div class="cb-badges"><span class="cb-badge medium">Intermediate</span><span class="cb-badge time">~15 min</span></div></div></a></li>
+        <li class="cb-item"><a href="/cookbooks/pubsub-streaming/03-valkey-streams.html"><span class="cb-num">03</span><div class="cb-info"><h4>Valkey Streams Fundamentals</h4><p>XADD, XREAD, XRANGE — durable message queues</p><div class="cb-badges"><span class="cb-badge medium">Intermediate</span><span class="cb-badge time">~20 min</span></div></div></a></li>
+        <li class="cb-item"><a href="/cookbooks/pubsub-streaming/04-consumer-groups.html"><span class="cb-num">04</span><div class="cb-info"><h4>Consumer Groups</h4><p>Distributed processing with XREADGROUP and acknowledgments</p><div class="cb-badges"><span class="cb-badge hard">Advanced</span><span class="cb-badge time">~25 min</span></div></div></a></li>
+        <li class="cb-item"><a href="/cookbooks/pubsub-streaming/05-fan-out-patterns.html"><span class="cb-num">05</span><div class="cb-info"><h4>Fan-Out Patterns</h4><p>One producer → many consumers for AI events and notifications</p><div class="cb-badges"><span class="cb-badge hard">Advanced</span><span class="cb-badge time">~25 min</span></div></div></a></li>
+        <li class="cb-item"><a href="/cookbooks/pubsub-streaming/06-production.html"><span class="cb-num">06</span><div class="cb-info"><h4>Production Patterns</h4><p>Backpressure, monitoring, reconnection, dead letter queues</p><div class="cb-badges"><span class="cb-badge hard">Advanced</span><span class="cb-badge time">~30 min</span></div></div></a></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="uc-panel" style="display:flex;flex-direction:column">
+    <div class="uc-panel-header">
+      <h2><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> Live Demo</h2>
+      <p>Publish messages, subscribe to channels, stream LLM tokens, and test fan-out patterns</p>
+    </div>
+    <iframe class="demo-frame" src="/demo/pubsub-streaming.html" title="Pub/Sub & Streaming Demo"></iframe>
+  </div>
+</div>
+
+<div class="uc-github"><div class="uc-github-card">
+  <div><h3>Complete source code on GitHub</h3><p>All cookbooks, demo, and example code for Pub/Sub &amp; Streaming patterns.</p></div>
+  <div class="uc-github-card-actions">
+    <a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank" class="btn btn-primary">View on GitHub &rarr;</a>
+    <a href="/cookbooks/pubsub-streaming/" class="btn btn-outline">All 6 Cookbooks &rarr;</a>
+  </div>
+</div></div>
+</body>
+</html>

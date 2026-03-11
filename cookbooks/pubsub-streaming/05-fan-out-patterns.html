@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>05 — Fan-Out Patterns — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/pubsub-streaming/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div></div></nav>
+<article>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/pubsub-streaming/">Pub/Sub &amp; Streaming</a> → 05 Fan-Out Patterns</div>
+<div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~25 min</span></div>
+<h1>Fan-Out <span class="gradient">Patterns</span></h1>
+<p class="lead">One producer, many consumers. Broadcast AI agent events, stream LLM responses to dashboards, and deliver notifications to multiple services.</p>
+<h2>Pattern 1: Pub/Sub Fan-Out (Live)</h2>
+<pre><code><span class="keyword">import</span> redis, json, time
+client = redis.Redis(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>, decode_responses=<span class="keyword">True</span>)
+
+<span class="keyword">def</span> <span class="func">broadcast_agent_event</span>(agent_id, event_type, payload):
+    <span class="string">"""Broadcast to all subscribers watching this agent."""</span>
+    channel = <span class="string">f"agent:{agent_id}:events"</span>
+    message = {<span class="string">"type"</span>: event_type, <span class="string">"data"</span>: payload, <span class="string">"ts"</span>: time.time()}
+    n = client.publish(channel, json.dumps(message))
+    <span class="keyword">return</span> n  <span class="comment"># Number of receivers</span>
+
+<span class="comment"># Dashboard, logger, metrics all receive this:</span>
+broadcast_agent_event(<span class="string">"agent-1"</span>, <span class="string">"tool_call"</span>, {<span class="string">"tool"</span>: <span class="string">"search"</span>, <span class="string">"query"</span>: <span class="string">"valkey"</span>})</code></pre>
+<h2>Pattern 2: Stream Fan-Out (Durable)</h2>
+<pre><code><span class="comment"># Multiple consumer groups on the SAME stream</span>
+<span class="comment"># Each group gets ALL messages independently</span>
+client.xgroup_create(<span class="string">"ai:events"</span>, <span class="string">"loggers"</span>, id=<span class="string">"0"</span>, mkstream=<span class="keyword">True</span>)
+client.xgroup_create(<span class="string">"ai:events"</span>, <span class="string">"metrics"</span>, id=<span class="string">"0"</span>, mkstream=<span class="keyword">True</span>)
+client.xgroup_create(<span class="string">"ai:events"</span>, <span class="string">"alerts"</span>, id=<span class="string">"0"</span>, mkstream=<span class="keyword">True</span>)
+
+<span class="comment"># Producer writes once</span>
+client.xadd(<span class="string">"ai:events"</span>, {<span class="string">"event"</span>: <span class="string">"model_prediction"</span>, <span class="string">"latency_ms"</span>: <span class="string">"45"</span>})
+<span class="comment"># All 3 groups get the message independently</span></code></pre>
+<h2>Pattern 3: Hybrid — Stream + Pub/Sub</h2>
+<pre><code><span class="keyword">def</span> <span class="func">publish_with_durability</span>(event):
+    <span class="string">"""Write to Stream (durable) AND Pub/Sub (live)."""</span>
+    payload = json.dumps(event)
+    client.xadd(<span class="string">"ai:events"</span>, {<span class="string">"data"</span>: payload}, maxlen=<span class="num">50000</span>)
+    client.publish(<span class="string">"ai:events:live"</span>, payload)</code></pre>
+<div class="callout"><p><strong>When to use which:</strong> Pub/Sub for real-time dashboards (missing messages OK). Streams with consumer groups for task queues (every message must be processed). Hybrid for both.</p></div>
+<table><tr><th>Pattern</th><th>Delivery</th><th>Durability</th><th>Best For</th></tr>
+<tr><td>Pub/Sub</td><td>All subscribers</td><td>None</td><td>Live dashboards</td></tr>
+<tr><td>Stream + 1 group</td><td>One worker per msg</td><td>Persistent</td><td>Task queues</td></tr>
+<tr><td>Stream + N groups</td><td>All groups</td><td>Persistent</td><td>Event sourcing</td></tr>
+<tr><td>Hybrid</td><td>Both</td><td>Both</td><td>Full coverage</td></tr></table>
+<div class="nav-prev-next">
+<a href="04-consumer-groups.html" class="prev"><span class="label">← Previous</span><span class="title">04 — Consumer Groups</span></a>
+<a href="06-production.html" class="next"><span class="label">Next →</span><span class="title">06 — Production Patterns</span></a>
+</div>
+</article></body></html>
