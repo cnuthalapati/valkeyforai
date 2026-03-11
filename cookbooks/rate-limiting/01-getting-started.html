@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>01 — Getting Started with Rate Limiting — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
+<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/rate-limiting/">Cookbooks</a><a href="/demo/rate-limiter.html">Demo</a><a href="https://github.com/valkey-io" target="_blank">GitHub</a></div>
+</div></nav>
+
+<article>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/rate-limiting/">Rate Limiting</a> → 01 Getting Started</div>
+<div class="meta"><span class="diff-easy">Beginner</span><span class="lang">Python</span><span class="lang">~5 min</span></div>
+
+<h1>Getting <span class="gradient">Started</span></h1>
+<p class="lead">Start Valkey, install dependencies, and build your first rate limiter in under 5 minutes. By the end you'll have a working fixed-window limiter that tracks both requests and tokens.</p>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>Docker installed (or a running Valkey instance)</li>
+<li>Python 3.9+</li>
+</ul>
+
+<h2>Step 1: Start Valkey</h2>
+<pre><code>docker run -d --name valkey -p 6379:6379 valkey/valkey:latest</code></pre>
+<p>Verify it's running:</p>
+<pre><code>redis-cli ping
+<span class="comment"># PONG</span></code></pre>
+
+<h2>Step 2: Install Dependencies</h2>
+<pre><code>pip install redis</code></pre>
+<p>That's it — no special libraries needed. The <code>redis</code> Python package works with Valkey out of the box.</p>
+
+<h2>Step 3: Your First Rate Limiter</h2>
+<pre><code><span class="keyword">import</span> redis
+<span class="keyword">import</span> time
+
+client = redis.Redis(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>, decode_responses=<span class="keyword">True</span>)
+
+<span class="keyword">def</span> <span class="func">check_rate_limit</span>(user_id: str, max_requests: int = <span class="num">10</span>, window: int = <span class="num">60</span>) -> dict:
+    <span class="string">"""Fixed-window rate limiter."""</span>
+    window_num = <span class="func">int</span>(time.time() // window)
+    key = <span class="string">f"rl:{user_id}:{window_num}"</span>
+
+    pipe = client.pipeline(transaction=<span class="keyword">True</span>)
+    pipe.incr(key)
+    pipe.expire(key, window)
+    results = pipe.execute()
+
+    current = results[<span class="num">0</span>]
+    allowed = current <= max_requests
+
+    <span class="keyword">return</span> {
+        <span class="string">"allowed"</span>: allowed,
+        <span class="string">"current"</span>: current,
+        <span class="string">"limit"</span>: max_requests,
+        <span class="string">"remaining"</span>: <span class="func">max</span>(<span class="num">0</span>, max_requests - current),
+    }</code></pre>
+
+<h2>Step 4: Test It</h2>
+<pre><code><span class="comment"># Send 12 requests — last 2 should be denied</span>
+<span class="keyword">for</span> i <span class="keyword">in</span> <span class="func">range</span>(<span class="num">12</span>):
+    result = check_rate_limit(<span class="string">"user-123"</span>, max_requests=<span class="num">10</span>)
+    status = <span class="string">"✅"</span> <span class="keyword">if</span> result[<span class="string">"allowed"</span>] <span class="keyword">else</span> <span class="string">"❌"</span>
+    <span class="func">print</span>(<span class="string">f"{status} Request {i+1}: {result['current']}/{result['limit']}"</span>)</code></pre>
+
+<p><strong>Output:</strong></p>
+<pre><code>✅ Request 1: 1/10
+✅ Request 2: 2/10
+...
+✅ Request 10: 10/10
+❌ Request 11: 11/10
+❌ Request 12: 12/10</code></pre>
+
+<h2>How It Works</h2>
+<div class="callout">
+<p><strong>Key Insight:</strong> We use <code>INCR</code> + <code>EXPIRE</code> in a pipeline. The key includes the window number (current timestamp ÷ window size), so it auto-rotates every window. Valkey handles all the atomic counting — no race conditions.</p>
+</div>
+
+<table>
+<tr><th>Operation</th><th>Valkey Command</th><th>Time</th></tr>
+<tr><td>Increment counter</td><td><code>INCR</code></td><td>~0.1ms</td></tr>
+<tr><td>Set expiry</td><td><code>EXPIRE</code></td><td>~0.1ms</td></tr>
+<tr><td>Pipeline (both)</td><td>1 round-trip</td><td>~0.2ms total</td></tr>
+</table>
+
+<div class="nav-prev-next">
+<div></div>
+<a href="02-token-aware.html" class="next">
+<span class="label">Next →</span>
+<span class="title">02 — Token-Aware Limiting</span>
+</a>
+</div>
+</article>
+</body>
+</html>

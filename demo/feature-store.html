@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interactive Feature Store Demo — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0a;--card:rgba(255,255,255,.04);--card-h:rgba(255,255,255,.07);--brd:rgba(255,255,255,.08);--t1:#f5f5f7;--t2:rgba(245,245,247,.6);--t3:rgba(245,245,247,.4);--g1:#10b981;--g2:#06b6d4;--accent:#a855f7;--radius:16px;--font:'Inter',system-ui,sans-serif;--mono:'JetBrains Mono',monospace}
+html{scroll-behavior:smooth;-webkit-font-smoothing:antialiased}
+body{font-family:var(--font);background:var(--bg);color:var(--t1);line-height:1.6;min-height:100vh}
+a{color:inherit;text-decoration:none}
+.nav{position:sticky;top:0;z-index:100;background:rgba(10,10,10,.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--brd);padding:16px 32px}
+.nav-inner{max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.nav-logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:16px}
+.nav-logo img{height:24px}
+.nav-links{display:flex;gap:24px;font-size:14px;color:var(--t2)}
+.nav-links a:hover{color:var(--t1)}
+.purple{color:var(--accent)}
+
+.hero{text-align:center;padding:48px 24px 32px}
+.hero h1{font-size:42px;font-weight:900;letter-spacing:-.04em}
+.hero h1 span{background:linear-gradient(135deg,var(--g1),var(--g2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero p{color:var(--t2);font-size:16px;margin-top:8px}
+
+.dashboard{max-width:1200px;margin:0 auto;padding:0 24px 48px;display:grid;grid-template-columns:340px 1fr;gap:20px}
+
+/* Left Panel */
+.panel{background:var(--card);border:1px solid var(--brd);border-radius:var(--radius);padding:24px}
+.panel h2{font-size:16px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.section{margin-bottom:20px}
+.section-title{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--t3);margin-bottom:8px}
+.form-row{margin-bottom:10px}
+.form-row label{display:block;font-size:12px;color:var(--t2);margin-bottom:4px}
+.form-row input,.form-row select{width:100%;background:rgba(255,255,255,.06);border:1px solid var(--brd);border-radius:8px;padding:8px 12px;color:var(--t1);font-family:var(--mono);font-size:13px;outline:none}
+.form-row input:focus,.form-row select:focus{border-color:var(--g1)}
+.form-row select{cursor:pointer}
+.btn{display:block;width:100%;padding:10px;border:none;border-radius:10px;font-family:var(--font);font-size:14px;font-weight:600;cursor:pointer;transition:.2s;margin-bottom:8px}
+.btn-write{background:linear-gradient(135deg,var(--g1),var(--g2));color:#fff}
+.btn-read{background:linear-gradient(135deg,var(--accent),#ec4899);color:#fff}
+.btn-batch{background:transparent;border:1px solid var(--g1);color:var(--g1)}
+.btn-reset{background:transparent;border:1px solid var(--brd);color:var(--t2)}
+.btn:hover{transform:translateY(-1px);opacity:.9}
+
+/* Right Panel */
+.right{display:flex;flex-direction:column;gap:20px}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.stat-card{background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:16px;text-align:center}
+.stat-val{font-size:28px;font-weight:800;font-family:var(--mono);letter-spacing:-.02em}
+.stat-val.green{color:var(--g1)}.stat-val.cyan{color:var(--g2)}.stat-val.purple{color:var(--accent)}.stat-val.amber{color:#f59e0b}
+.stat-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--t3);margin-top:4px}
+
+.output-panel{background:var(--card);border:1px solid var(--brd);border-radius:var(--radius);padding:20px;flex:1}
+.output-panel h3{font-size:14px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.output{font-family:var(--mono);font-size:13px;line-height:1.8;color:var(--t2);max-height:420px;overflow-y:auto;padding:12px;background:rgba(0,0,0,.4);border-radius:10px}
+.output .timestamp{color:var(--t3);font-size:11px}
+.output .op-write{color:var(--g1)}
+.output .op-read{color:var(--accent)}
+.output .op-batch{color:var(--g2)}
+.output .latency{color:#f59e0b;font-size:11px}
+.output .placeholder{color:var(--t3);font-style:italic}
+.output .json{color:var(--t2)}
+.output .key{color:var(--g1)}
+.output .val{color:var(--g2)}
+
+.entity-table{width:100%;border-collapse:collapse;font-size:13px;font-family:var(--mono)}
+.entity-table th{text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--t3);padding:8px;border-bottom:1px solid var(--brd)}
+.entity-table td{padding:8px;border-bottom:1px solid rgba(255,255,255,.03);color:var(--t2)}
+.entity-table tr:hover td{color:var(--t1);background:rgba(255,255,255,.02)}
+.freshness-good{color:var(--g1)}
+.freshness-warn{color:#f59e0b}
+.freshness-stale{color:#ef4444}
+
+.key-display{background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.2);border-radius:8px;padding:10px 14px;font-family:var(--mono);font-size:12px;color:var(--g1);margin:12px 0;word-break:break-all}
+
+@media(max-width:800px){.dashboard{grid-template-columns:1fr}.stats-grid{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+
+<nav class="nav"><div class="nav-inner">
+<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="purple">for ai</span></a>
+<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/feature-store/">Cookbooks</a><a href="https://github.com/valkey-io" target="_blank">GitHub</a></div>
+</div></nav>
+
+<div class="hero">
+<h1>Interactive <span>Feature Store</span> Demo</h1>
+<p>Simulate a real-time ML feature store in your browser. See how Valkey stores and serves features.</p>
+</div>
+
+<div class="dashboard">
+<!-- Left Panel -->
+<div>
+<div class="panel">
+<h2>🎯 Feature Writer</h2>
+
+<div class="section">
+<div class="section-title">Entity</div>
+<div class="form-row">
+<label>Entity Type</label>
+<select id="entityType">
+<option value="user">User</option>
+<option value="item">Item</option>
+<option value="transaction">Transaction</option>
+</select>
+</div>
+<div class="form-row">
+<label>Entity ID</label>
+<input type="text" id="entityId" value="user_001" placeholder="e.g. user_001">
+</div>
+</div>
+
+<div class="section">
+<div class="section-title">Features</div>
+<div id="featureFields"></div>
+</div>
+
+<div class="key-display" id="keyDisplay">fs:v1:user_profile:user_001</div>
+
+<button class="btn btn-write" onclick="writeFeatures()">⚡ Write Features (HSET)</button>
+<button class="btn btn-read" onclick="readFeatures()">📊 Read Features (HGETALL)</button>
+<button class="btn btn-batch" onclick="writeBatch()">🔥 Write Batch (100 entities)</button>
+<button class="btn btn-reset" onclick="resetStore()">↻ Reset Store</button>
+</div>
+</div>
+
+<!-- Right Panel -->
+<div class="right">
+<div class="stats-grid">
+<div class="stat-card"><div class="stat-val green" id="statEntities">0</div><div class="stat-label">Entities</div></div>
+<div class="stat-card"><div class="stat-val cyan" id="statReads">0</div><div class="stat-label">Reads</div></div>
+<div class="stat-card"><div class="stat-val purple" id="statWrites">0</div><div class="stat-label">Writes</div></div>
+<div class="stat-card"><div class="stat-val amber" id="statLatency">0ms</div><div class="stat-label">Avg Latency</div></div>
+</div>
+
+<div class="output-panel">
+<h3>📋 Operation Log</h3>
+<div class="output" id="log"><span class="placeholder">Write or read features to begin...</span></div>
+</div>
+
+<div class="output-panel">
+<h3>🗄️ Stored Entities</h3>
+<table class="entity-table">
+<thead><tr><th>Key</th><th>Features</th><th>Freshness</th></tr></thead>
+<tbody id="entityTable"><tr><td colspan="3" style="color:var(--t3);font-style:italic">No entities yet</td></tr></tbody>
+</table>
+</div>
+</div>
+</div>
+
+<script>
+// ── Feature Store Simulation ──────────────────────────────────────
+const store = {};
+let stats = { entities: 0, reads: 0, writes: 0, latencies: [] };
+
+const schemas = {
+    user: {
+        viewName: "user_profile",
+        features: [
+            { name: "age", type: "int", default: 28 },
+            { name: "lifetime_value", type: "float", default: 1250.50 },
+            { name: "segment", type: "string", default: "premium" },
+            { name: "fraud_score", type: "float", default: 0.05 },
+        ]
+    },
+    item: {
+        viewName: "item_catalog",
+        features: [
+            { name: "price", type: "float", default: 29.99 },
+            { name: "category", type: "string", default: "electronics" },
+            { name: "popularity", type: "float", default: 0.85 },
+            { name: "stock", type: "int", default: 142 },
+        ]
+    },
+    transaction: {
+        viewName: "txn_features",
+        features: [
+            { name: "amount", type: "float", default: 99.99 },
+            { name: "merchant", type: "string", default: "amazon" },
+            { name: "is_international", type: "string", default: "false" },
+            { name: "risk_score", type: "float", default: 0.12 },
+        ]
+    }
+};
+
+function getSchema() {
+    return schemas[document.getElementById("entityType").value];
+}
+
+function updateKeyDisplay() {
+    const schema = getSchema();
+    const id = document.getElementById("entityId").value || "unknown";
+    document.getElementById("keyDisplay").textContent = `fs:v1:${schema.viewName}:${id}`;
+}
+
+function renderFeatureFields() {
+    const schema = getSchema();
+    const container = document.getElementById("featureFields");
+    container.innerHTML = schema.features.map(f => `
+        <div class="form-row">
+            <label>${f.name} <span style="color:var(--t3)">(${f.type})</span></label>
+            <input type="text" id="feat_${f.name}" value="${f.default}">
+        </div>
+    `).join("");
+    updateKeyDisplay();
+}
+
+document.getElementById("entityType").addEventListener("change", () => {
+    renderFeatureFields();
+    // Update entity id prefix
+    const type = document.getElementById("entityType").value;
+    document.getElementById("entityId").value = type + "_001";
+    updateKeyDisplay();
+});
+document.getElementById("entityId").addEventListener("input", updateKeyDisplay);
+
+// ── Operations ────────────────────────────────────────────────────
+function writeFeatures() {
+    const schema = getSchema();
+    const entityId = document.getElementById("entityId").value;
+    const key = `fs:v1:${schema.viewName}:${entityId}`;
+
+    const features = {};
+    schema.features.forEach(f => {
+        features[f.name] = document.getElementById(`feat_${f.name}`).value;
+    });
+    features._updated_at = (Date.now() / 1000).toFixed(3);
+    features._feature_view = schema.viewName;
+
+    // Simulate latency
+    const start = performance.now();
+    store[key] = { ...features };
+    const latency = (performance.now() - start + Math.random() * 0.15).toFixed(2);
+
+    stats.writes++;
+    stats.entities = Object.keys(store).length;
+    stats.latencies.push(parseFloat(latency));
+
+    addLog("write", `HSET ${key}`, features, latency);
+    updateStats();
+    updateTable();
+}
+
+function readFeatures() {
+    const schema = getSchema();
+    const entityId = document.getElementById("entityId").value;
+    const key = `fs:v1:${schema.viewName}:${entityId}`;
+
+    const start = performance.now();
+    const data = store[key];
+    const latency = (performance.now() - start + Math.random() * 0.12).toFixed(2);
+
+    stats.reads++;
+    stats.latencies.push(parseFloat(latency));
+
+    if (data) {
+        const display = {};
+        Object.keys(data).filter(k => !k.startsWith("_")).forEach(k => display[k] = data[k]);
+        addLog("read", `HGETALL ${key}`, display, latency);
+    } else {
+        addLog("read", `HGETALL ${key}`, "(nil) — entity not found", latency);
+    }
+    updateStats();
+}
+
+function writeBatch() {
+    const schema = getSchema();
+    const type = document.getElementById("entityType").value;
+    const count = 100;
+
+    const start = performance.now();
+    const segments = ["premium", "standard", "free", "enterprise"];
+    const categories = ["electronics", "clothing", "food", "software"];
+    const merchants = ["amazon", "walmart", "target", "shopify"];
+
+    for (let i = 0; i < count; i++) {
+        const id = `${type}_${String(i+1).padStart(3,"0")}`;
+        const key = `fs:v1:${schema.viewName}:${id}`;
+        const features = { _updated_at: (Date.now()/1000).toFixed(3), _feature_view: schema.viewName };
+
+        schema.features.forEach(f => {
+            if (f.type === "int") features[f.name] = Math.floor(Math.random() * 100);
+            else if (f.type === "float") features[f.name] = (Math.random() * 1000).toFixed(2);
+            else {
+                const lists = { segment: segments, category: categories, merchant: merchants };
+                features[f.name] = (lists[f.name] || [f.default])[Math.floor(Math.random() * 4)] || f.default;
+            }
+        });
+        store[key] = features;
+    }
+    const latency = (performance.now() - start + Math.random() * 2).toFixed(2);
+
+    stats.writes += count;
+    stats.entities = Object.keys(store).length;
+    stats.latencies.push(parseFloat(latency));
+
+    addLog("batch", `Pipeline HSET × ${count} entities`, `Wrote ${count} ${type} entities`, latency);
+    updateStats();
+    updateTable();
+}
+
+function resetStore() {
+    Object.keys(store).forEach(k => delete store[k]);
+    stats = { entities: 0, reads: 0, writes: 0, latencies: [] };
+    document.getElementById("log").innerHTML = '<span class="placeholder">Write or read features to begin...</span>';
+    updateStats();
+    updateTable();
+}
+
+// ── UI Updates ────────────────────────────────────────────────────
+function addLog(op, cmd, data, latency) {
+    const log = document.getElementById("log");
+    if (log.querySelector(".placeholder")) log.innerHTML = "";
+
+    const time = new Date().toLocaleTimeString("en-GB", { hour12: false });
+    const opClass = op === "write" ? "op-write" : op === "read" ? "op-read" : "op-batch";
+    const opLabel = op.toUpperCase();
+
+    let dataStr;
+    if (typeof data === "string") {
+        dataStr = data;
+    } else {
+        dataStr = Object.entries(data).filter(([k]) => !k.startsWith("_"))
+            .map(([k, v]) => `<span class="key">${k}</span>: <span class="val">${v}</span>`)
+            .join(", ");
+        dataStr = `{ ${dataStr} }`;
+    }
+
+    const entry = `<div><span class="timestamp">${time}</span> <span class="${opClass}">[${opLabel}]</span> ${cmd} <span class="latency">(${latency}ms)</span><br>&nbsp;&nbsp;→ ${dataStr}</div>`;
+    log.insertAdjacentHTML("afterbegin", entry);
+}
+
+function updateStats() {
+    document.getElementById("statEntities").textContent = stats.entities;
+    document.getElementById("statReads").textContent = stats.reads;
+    document.getElementById("statWrites").textContent = stats.writes;
+    const avg = stats.latencies.length ? (stats.latencies.reduce((a,b) => a+b, 0) / stats.latencies.length).toFixed(2) : 0;
+    document.getElementById("statLatency").textContent = avg + "ms";
+}
+
+function updateTable() {
+    const tbody = document.getElementById("entityTable");
+    const keys = Object.keys(store).slice(-15).reverse();
+
+    if (keys.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="color:var(--t3);font-style:italic">No entities yet</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = keys.map(key => {
+        const data = store[key];
+        const feats = Object.keys(data).filter(k => !k.startsWith("_")).length;
+        const age = ((Date.now()/1000) - parseFloat(data._updated_at || 0));
+        let freshClass = "freshness-good", freshLabel;
+        if (age < 10) { freshLabel = `${age.toFixed(1)}s`; }
+        else if (age < 60) { freshLabel = `${age.toFixed(0)}s`; freshClass = "freshness-warn"; }
+        else { freshLabel = `${(age/60).toFixed(0)}m`; freshClass = "freshness-stale"; }
+
+        return `<tr><td style="color:var(--g1);font-size:11px">${key}</td><td>${feats} fields</td><td class="${freshClass}">${freshLabel}</td></tr>`;
+    }).join("");
+}
+
+// ── Initialize ────────────────────────────────────────────────────
+renderFeatureFields();
+setInterval(updateTable, 5000); // Refresh freshness every 5s
+</script>
+</body>
+</html>

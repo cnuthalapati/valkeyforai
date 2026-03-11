@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rate Limiter Interactive Demo — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#000;--card:rgba(255,255,255,.04);--brd:rgba(255,255,255,.08);--t1:#f5f5f7;--t2:rgba(245,245,247,.6);--t3:rgba(245,245,247,.4);--g1:#6366f1;--g2:#a855f7;--green:#10b981;--red:#f43f5e;--yellow:#f59e0b;--font:'Inter',system-ui,sans-serif}
+html{-webkit-font-smoothing:antialiased}
+body{font-family:var(--font);background:var(--bg);color:var(--t1);line-height:1.6;min-height:100vh}
+a{color:inherit;text-decoration:none}
+.nav{position:sticky;top:0;z-index:100;background:rgba(0,0,0,.8);backdrop-filter:blur(20px);border-bottom:1px solid var(--brd);padding:16px 32px}
+.nav-inner{max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.nav-logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:16px}
+.nav-logo img{height:24px}
+.accent{color:var(--g2)}
+.nav-links{display:flex;gap:24px;font-size:14px;color:var(--t2)}
+.nav-links a:hover{color:var(--t1)}
+.container{max-width:1100px;margin:0 auto;padding:32px 24px}
+.header{text-align:center;margin-bottom:40px}
+.header h1{font-size:36px;font-weight:900;letter-spacing:-.03em;margin-bottom:8px}
+.header h1 span{background:linear-gradient(135deg,var(--g1),var(--g2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.header p{color:var(--t2);font-size:15px}
+.grid{display:grid;grid-template-columns:320px 1fr;gap:24px}
+@media(max-width:800px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--brd);border-radius:16px;padding:24px}
+.panel h3{font-size:16px;font-weight:700;margin-bottom:16px}
+.algo-tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px}
+.algo-tab{padding:6px 14px;border-radius:100px;font-size:12px;font-weight:600;border:1px solid var(--brd);background:transparent;color:var(--t2);cursor:pointer;transition:.2s}
+.algo-tab:hover{border-color:rgba(255,255,255,.2);color:var(--t1)}
+.algo-tab.active{background:linear-gradient(135deg,var(--g1),var(--g2));border-color:transparent;color:#fff}
+.config label{display:block;font-size:12px;color:var(--t3);margin-bottom:4px;font-weight:500}
+.config input[type=range]{width:100%;margin:4px 0 12px;accent-color:var(--g1)}
+.config .val{font-size:13px;color:var(--g1);font-weight:600;float:right}
+.btn-group{display:flex;flex-direction:column;gap:8px;margin-top:20px}
+.btn{padding:10px 20px;border-radius:10px;font-size:13px;font-weight:600;border:none;cursor:pointer;transition:.2s;font-family:var(--font)}
+.btn-send{background:linear-gradient(135deg,var(--g1),var(--g2));color:#fff}
+.btn-send:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(99,102,241,.3)}
+.btn-burst{background:rgba(245,158,11,.12);color:var(--yellow);border:1px solid rgba(245,158,11,.2)}
+.btn-burst:hover{background:rgba(245,158,11,.2)}
+.btn-reset{background:rgba(244,63,94,.08);color:var(--red);border:1px solid rgba(244,63,94,.15)}
+.btn-reset:hover{background:rgba(244,63,94,.15)}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px}
+.stat-card{background:rgba(255,255,255,.03);border:1px solid var(--brd);border-radius:12px;padding:14px;text-align:center}
+.stat-card .num{font-size:28px;font-weight:800;letter-spacing:-.02em}
+.stat-card .lbl{font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.stat-card.allowed .num{color:var(--green)}
+.stat-card.denied .num{color:var(--red)}
+.gauge{margin:20px 0}
+.gauge-label{display:flex;justify-content:space-between;font-size:12px;color:var(--t3);margin-bottom:6px}
+.gauge-bar{height:10px;background:rgba(255,255,255,.06);border-radius:100px;overflow:hidden}
+.gauge-fill{height:100%;border-radius:100px;transition:.3s;background:linear-gradient(90deg,var(--green),var(--yellow),var(--red))}
+.log{background:rgba(255,255,255,.02);border:1px solid var(--brd);border-radius:12px;padding:16px;max-height:400px;overflow-y:auto;font-family:'SF Mono','Fira Code',monospace;font-size:12px;line-height:1.8}
+.log-entry{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+.log-entry.allow{color:var(--green)}
+.log-entry.deny{color:var(--red)}
+.log-entry .ts{color:var(--t3);margin-right:8px}
+.algo-info{margin-top:20px;background:rgba(99,102,241,.06);border:1px solid rgba(99,102,241,.15);border-radius:12px;padding:16px;font-size:13px;color:var(--t2);line-height:1.6}
+.algo-info strong{color:var(--t1)}
+.algo-info code{background:rgba(255,255,255,.06);padding:1px 5px;border-radius:3px;color:#c4b5fd;font-size:12px}
+</style>
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
+<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/rate-limiting/">Cookbooks</a><a href="https://github.com/valkey-io" target="_blank">GitHub</a></div>
+</div></nav>
+
+<div class="container">
+<div class="header">
+<h1>Interactive <span>Rate Limiter</span> Demo</h1>
+<p>Simulate rate limiting algorithms in your browser. No backend needed — all logic runs client-side.</p>
+</div>
+
+<div class="grid">
+<div>
+<div class="panel">
+<h3>Algorithm</h3>
+<div class="algo-tabs">
+<button class="algo-tab active" data-algo="fixed">Fixed Window</button>
+<button class="algo-tab" data-algo="sliding">Sliding Window</button>
+<button class="algo-tab" data-algo="token">Token Bucket</button>
+<button class="algo-tab" data-algo="leaky">Leaky Bucket</button>
+</div>
+
+<div class="config">
+<label>Max Requests <span class="val" id="maxReqVal">10</span></label>
+<input type="range" id="maxReq" min="3" max="30" value="10">
+<label>Window (seconds) <span class="val" id="windowVal">10</span></label>
+<input type="range" id="window" min="5" max="60" value="10">
+<label>Token Cost (per request) <span class="val" id="costVal">1</span></label>
+<input type="range" id="cost" min="1" max="5" value="1">
+</div>
+
+<div class="btn-group">
+<button class="btn btn-send" id="btnSend">⚡ Send Request</button>
+<button class="btn btn-burst" id="btnBurst">🔥 Send Burst (5x)</button>
+<button class="btn btn-reset" id="btnReset">↺ Reset</button>
+</div>
+</div>
+
+<div class="algo-info" id="algoInfo">
+<strong>Fixed Window:</strong> Counts requests within a fixed time window. Simple and fast — uses <code>INCR</code> + <code>EXPIRE</code>. Drawback: can allow 2x burst at window boundaries.
+</div>
+</div>
+
+<div>
+<div class="stats">
+<div class="stat-card allowed"><div class="num" id="allowedCount">0</div><div class="lbl">Allowed</div></div>
+<div class="stat-card denied"><div class="num" id="deniedCount">0</div><div class="lbl">Denied</div></div>
+<div class="stat-card"><div class="num" id="totalCount">0</div><div class="lbl">Total</div></div>
+<div class="stat-card"><div class="num" id="windowTime">10s</div><div class="lbl">Window</div></div>
+</div>
+
+<div class="gauge">
+<div class="gauge-label"><span>Usage</span><span id="gaugeText">0 / 10</span></div>
+<div class="gauge-bar"><div class="gauge-fill" id="gaugeFill" style="width:0%"></div></div>
+</div>
+
+<div class="panel">
+<h3>Request Log</h3>
+<div class="log" id="log"><div style="color:var(--t3);text-align:center;padding:20px">Send a request to begin...</div></div>
+</div>
+</div>
+</div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+
+let algo = 'fixed';
+let maxReq = 10, windowSec = 10, cost = 1;
+let allowed = 0, denied = 0, total = 0;
+let windowRequests = [];
+let bucketTokens = 10, lastRefill = Date.now();
+
+const algoDescriptions = {
+  fixed: '<strong>Fixed Window:</strong> Counts requests within a fixed time window. Uses <code>INCR</code> + <code>EXPIRE</code>. Simple, fast, ~0.2ms per check. Drawback: can allow 2x burst at window boundaries.',
+  sliding: '<strong>Sliding Window:</strong> Counts requests in a rolling window using <code>ZRANGEBYSCORE</code>. Smoother than fixed window — no boundary burst issue. Slightly more Valkey commands per check.',
+  token: '<strong>Token Bucket:</strong> Tokens refill at a steady rate. Each request consumes tokens. Allows controlled bursts. Implemented as a Lua script with <code>HMSET</code> for atomicity.',
+  leaky: '<strong>Leaky Bucket:</strong> Requests fill a bucket that "leaks" at a constant rate. Enforces a strict output rate — great for API gateways. Uses <code>HMSET</code> with timestamps.',
+};
+
+$$('.algo-tab').forEach(t => t.addEventListener('click', () => {
+  $$('.algo-tab').forEach(b => b.classList.remove('active'));
+  t.classList.add('active');
+  algo = t.dataset.algo;
+  $('#algoInfo').innerHTML = algoDescriptions[algo];
+  resetAll();
+}));
+
+$('#maxReq').addEventListener('input', e => { maxReq = +e.target.value; $('#maxReqVal').textContent = maxReq; bucketTokens = maxReq; });
+$('#window').addEventListener('input', e => { windowSec = +e.target.value; $('#windowVal').textContent = windowSec; $('#windowTime').textContent = windowSec + 's'; });
+$('#cost').addEventListener('input', e => { cost = +e.target.value; $('#costVal').textContent = cost; });
+
+$('#btnSend').addEventListener('click', () => sendRequest());
+$('#btnBurst').addEventListener('click', () => { for(let i=0;i<5;i++) setTimeout(()=>sendRequest(), i*80); });
+$('#btnReset').addEventListener('click', resetAll);
+
+function sendRequest() {
+  const now = Date.now();
+  let ok = false;
+
+  switch(algo) {
+    case 'fixed': {
+      const windowStart = Math.floor(now / (windowSec * 1000)) * (windowSec * 1000);
+      windowRequests = windowRequests.filter(t => t >= windowStart);
+      const currentCount = windowRequests.reduce((s) => s + cost, 0);
+      ok = currentCount + cost <= maxReq;
+      if(ok) for(let i=0;i<cost;i++) windowRequests.push(now);
+      break;
+    }
+    case 'sliding': {
+      const cutoff = now - windowSec * 1000;
+      windowRequests = windowRequests.filter(t => t > cutoff);
+      const currentCount = windowRequests.length;
+      ok = currentCount + cost <= maxReq;
+      if(ok) for(let i=0;i<cost;i++) windowRequests.push(now);
+      break;
+    }
+    case 'token': {
+      const elapsed = (now - lastRefill) / 1000;
+      const refillRate = maxReq / windowSec;
+      bucketTokens = Math.min(maxReq, bucketTokens + elapsed * refillRate);
+      lastRefill = now;
+      ok = bucketTokens >= cost;
+      if(ok) bucketTokens -= cost;
+      break;
+    }
+    case 'leaky': {
+      const elapsed = (now - lastRefill) / 1000;
+      const leakRate = maxReq / windowSec;
+      const leaked = elapsed * leakRate;
+      windowRequests = windowRequests.filter(t => t > now - windowSec * 1000);
+      const queueLen = Math.max(0, windowRequests.length - leaked);
+      ok = queueLen + cost <= maxReq;
+      if(ok) for(let i=0;i<cost;i++) windowRequests.push(now);
+      lastRefill = now;
+      break;
+    }
+  }
+
+  total++;
+  if(ok) allowed++; else denied++;
+  updateUI(ok, now);
+}
+
+function updateUI(ok, now) {
+  $('#allowedCount').textContent = allowed;
+  $('#deniedCount').textContent = denied;
+  $('#totalCount').textContent = total;
+
+  let usage = 0;
+  if(algo === 'token') {
+    usage = ((maxReq - bucketTokens) / maxReq) * 100;
+  } else {
+    const cutoff = algo === 'fixed'
+      ? Math.floor(now / (windowSec * 1000)) * (windowSec * 1000)
+      : now - windowSec * 1000;
+    const active = windowRequests.filter(t => t >= cutoff).length;
+    usage = (active / maxReq) * 100;
+  }
+  usage = Math.min(100, Math.max(0, usage));
+  $('#gaugeFill').style.width = usage + '%';
+  const usedCount = algo === 'token'
+    ? Math.round(maxReq - bucketTokens)
+    : windowRequests.filter(t => t > Date.now() - windowSec * 1000).length;
+  $('#gaugeText').textContent = `${usedCount} / ${maxReq}`;
+
+  const log = $('#log');
+  if(total === 1) log.innerHTML = '';
+  const ts = new Date(now).toLocaleTimeString('en-US', {hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  const entry = document.createElement('div');
+  entry.className = `log-entry ${ok ? 'allow' : 'deny'}`;
+  entry.innerHTML = `<span class="ts">${ts}</span> ${ok ? '✅ ALLOWED' : '❌ DENIED'} — request #${total} (cost=${cost})${!ok ? ' — rate limit exceeded' : ''}`;
+  log.prepend(entry);
+}
+
+function resetAll() {
+  allowed = denied = total = 0;
+  windowRequests = [];
+  bucketTokens = maxReq;
+  lastRefill = Date.now();
+  $('#allowedCount').textContent = '0';
+  $('#deniedCount').textContent = '0';
+  $('#totalCount').textContent = '0';
+  $('#gaugeFill').style.width = '0%';
+  $('#gaugeText').textContent = `0 / ${maxReq}`;
+  $('#log').innerHTML = '<div style="color:var(--t3);text-align:center;padding:20px">Send a request to begin...</div>';
+}
+
+// Keyboard shortcut
+document.addEventListener('keydown', e => { if(e.key === ' ' && e.target === document.body) { e.preventDefault(); sendRequest(); } });
+</script>
+</body>
+</html>

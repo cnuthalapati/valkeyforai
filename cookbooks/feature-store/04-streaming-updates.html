@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>04 — Streaming Feature Updates — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
+<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/feature-store/">Cookbooks</a><a href="/demo/feature-store.html">Demo</a><a href="https://github.com/valkey-io" target="_blank">GitHub</a></div>
+</div></nav>
+
+<article>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/feature-store/">Feature Store</a> → 04 Streaming Updates</div>
+<div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~20 min</span></div>
+
+<h1>Streaming Feature <span class="gradient">Updates</span></h1>
+<p class="lead">Build real-time feature pipelines with Valkey Streams. Publish feature updates from any service, consume them with workers, and materialize features instantly into the online store.</p>
+
+<h2>The Architecture</h2>
+<p>Instead of writing features directly to Hashes, publish them to a Valkey Stream. A consumer reads the stream and writes to the online store. This decouples producers from consumers and enables:</p>
+<ul>
+<li><strong>Fan-in</strong> — Multiple services publish to one stream</li>
+<li><strong>Replay</strong> — Re-process historical updates if needed</li>
+<li><strong>Backpressure</strong> — Stream <code>MAXLEN</code> prevents unbounded growth</li>
+<li><strong>Distributed processing</strong> — Consumer groups for parallel workers</li>
+</ul>
+<pre><code><span class="comment"># Architecture:</span>
+<span class="comment">#   Service A  ──┐</span>
+<span class="comment">#   Service B  ──┼──▶  Valkey Stream  ──▶  Consumer  ──▶  Valkey Hash</span>
+<span class="comment">#   Service C  ──┘     (XADD)              (XREAD)        (HSET)</span>
+<span class="comment">#</span>
+<span class="comment"># Stream key: fs:stream:{feature_view_name}</span>
+<span class="comment"># Message:    {entity_id, features (JSON), timestamp}</span></code></pre>
+
+<h2>Step 1: Publish Feature Updates</h2>
+<p>Any service can publish feature updates using <code>XADD</code>:</p>
+
+<h3>Raw Valkey</h3>
+<pre><code><span class="keyword">import</span> redis
+<span class="keyword">import</span> json
+<span class="keyword">import</span> time
+
+client = redis.Redis(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>, decode_responses=<span class="keyword">True</span>)
+
+<span class="comment"># Publish a feature update to the stream</span>
+stream_key = <span class="string">"fs:stream:user_profile"</span>
+message = {
+    <span class="string">"entity_id"</span>: <span class="string">"user_001"</span>,
+    <span class="string">"features"</span>: json.dumps({<span class="string">"age"</span>: <span class="num">28</span>, <span class="string">"segment"</span>: <span class="string">"premium"</span>}),
+    <span class="string">"timestamp"</span>: <span class="func">str</span>(time.time()),
+    <span class="string">"feature_view"</span>: <span class="string">"user_profile"</span>,
+}
+
+<span class="comment"># XADD with MAXLEN to cap stream size</span>
+entry_id = client.xadd(stream_key, message, maxlen=<span class="num">10000</span>)
+<span class="func">print</span>(<span class="string">f"Published: {entry_id}"</span>)
+<span class="comment"># Published: 1710000000000-0</span></code></pre>
+
+<h3>With the Library</h3>
+<pre><code><span class="keyword">from</span> src <span class="keyword">import</span> ValkeyFeatureStore, Entity, FeatureView, Feature, FeatureType
+
+store = ValkeyFeatureStore(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>)
+
+user = Entity(name=<span class="string">"user"</span>, join_keys=[<span class="string">"user_id"</span>])
+user_features = FeatureView(
+    name=<span class="string">"user_profile"</span>,
+    entity=user,
+    features=[
+        Feature(<span class="string">"age"</span>, FeatureType.INT),
+        Feature(<span class="string">"segment"</span>, FeatureType.STRING),
+    ],
+    ttl=<span class="num">3600</span>,
+)
+store.register(user_features)
+
+<span class="comment"># Publish via streaming (uses XADD internally)</span>
+entry_id = store.streaming.publish(
+    user_features,
+    <span class="string">"user_001"</span>,
+    {<span class="string">"age"</span>: <span class="num">28</span>, <span class="string">"segment"</span>: <span class="string">"premium"</span>},
+    maxlen=<span class="num">10000</span>,
+)
+<span class="func">print</span>(<span class="string">f"Published: {entry_id}"</span>)</code></pre>
+
+<h2>Step 2: Consume and Materialize</h2>
+<p>A consumer reads the stream and writes features to the online store Hash:</p>
+
+<h3>Raw Valkey</h3>
+<pre><code><span class="keyword">def</span> <span class="func">consume_features</span>(stream_key: str, last_id: str = <span class="string">"0-0"</span>):
+    <span class="string">"""Read stream entries and write to online store."""</span>
+    entries = client.xread({stream_key: last_id}, count=<span class="num">100</span>, block=<span class="num">1000</span>)
+
+    <span class="keyword">if not</span> entries:
+        <span class="keyword">return</span> last_id
+
+    new_last_id = last_id
+    <span class="keyword">for</span> stream, messages <span class="keyword">in</span> entries:
+        <span class="keyword">for</span> msg_id, data <span class="keyword">in</span> messages:
+            entity_id = data[<span class="string">"entity_id"</span>]
+            features = json.loads(data[<span class="string">"features"</span>])
+            timestamp = <span class="func">float</span>(data[<span class="string">"timestamp"</span>])
+            view_name = data[<span class="string">"feature_view"</span>]
+
+            <span class="comment"># Write to online store Hash</span>
+            feature_key = <span class="string">f"fs:v1:{view_name}:{entity_id}"</span>
+            serialized = {k: <span class="func">str</span>(v) <span class="keyword">for</span> k, v <span class="keyword">in</span> features.items()}
+            serialized[<span class="string">"_updated_at"</span>] = <span class="func">str</span>(timestamp)
+            serialized[<span class="string">"_feature_view"</span>] = view_name
+            client.hset(feature_key, mapping=serialized)
+
+            new_last_id = msg_id
+            <span class="func">print</span>(<span class="string">f"Materialized {entity_id}: {features}"</span>)
+
+    <span class="keyword">return</span> new_last_id
+
+<span class="comment"># Run consumer loop</span>
+last_id = <span class="string">"0-0"</span>
+<span class="keyword">while</span> <span class="keyword">True</span>:
+    last_id = consume_features(<span class="string">"fs:stream:user_profile"</span>, last_id)</code></pre>
+
+<h3>With the Library</h3>
+<pre><code><span class="comment"># One-shot consume: read pending entries and write to Hashes</span>
+last_id = store.streaming.consume_once(
+    user_features,
+    last_id=<span class="string">"0-0"</span>,   <span class="comment"># Start from beginning</span>
+    count=<span class="num">100</span>,        <span class="comment"># Process up to 100 messages</span>
+    block_ms=<span class="num">1000</span>,    <span class="comment"># Block for 1 second if no messages</span>
+)
+
+<span class="comment"># Or start a background consumer thread</span>
+store.streaming.start_consumer(user_features)
+<span class="comment"># Consumer runs in background, materializing features as they arrive</span>
+
+<span class="comment"># Later, stop it</span>
+store.streaming.stop_consumer()</code></pre>
+
+<div class="callout">
+<p><strong>How it works:</strong> <code>consume_once()</code> calls <code>XREAD</code> to fetch stream entries, deserializes the JSON features, then calls <code>write_batch()</code> which uses a pipeline of <code>HSET</code> commands to materialize all entities in one round-trip.</p>
+</div>
+
+<h2>Step 3: Batch Publishing</h2>
+<p>For high-throughput producers, publish multiple entities in one pipeline:</p>
+<pre><code><span class="comment"># Publish 1000 entities in one pipeline</span>
+entity_features = {
+    <span class="string">f"user_{i:03d}"</span>: {<span class="string">"age"</span>: <span class="num">20</span> + i % <span class="num">50</span>, <span class="string">"segment"</span>: <span class="string">"premium"</span>}
+    <span class="keyword">for</span> i <span class="keyword">in</span> <span class="func">range</span>(<span class="num">1000</span>)
+}
+
+count = store.streaming.publish_batch(
+    user_features,
+    entity_features,
+    maxlen=<span class="num">10000</span>,
+)
+<span class="func">print</span>(<span class="string">f"Published {count} entities to stream"</span>)
+<span class="comment"># Published 1000 entities to stream</span></code></pre>
+
+<h2>Step 4: Stream Management</h2>
+<pre><code><span class="comment"># Check stream info</span>
+info = store.streaming.stream_info(user_features)
+<span class="func">print</span>(info)
+<span class="comment"># {'length': 1001, 'first_entry': ..., 'last_entry': ...}</span>
+
+<span class="comment"># Trim old entries</span>
+store.streaming.trim_stream(user_features, maxlen=<span class="num">1000</span>)
+
+<span class="comment"># Raw Valkey commands for stream inspection</span>
+length = client.xlen(<span class="string">"fs:stream:user_profile"</span>)
+info = client.xinfo_stream(<span class="string">"fs:stream:user_profile"</span>)
+<span class="func">print</span>(<span class="string">f"Stream length: {length}"</span>)</code></pre>
+
+<h2>Consumer Groups (Distributed Processing)</h2>
+<p>For production, use consumer groups to distribute work across multiple workers:</p>
+<pre><code><span class="comment"># Create a consumer group</span>
+stream_key = <span class="string">"fs:stream:user_profile"</span>
+<span class="keyword">try</span>:
+    client.xgroup_create(stream_key, <span class="string">"feature_writers"</span>, id=<span class="string">"0"</span>, mkstream=<span class="keyword">True</span>)
+<span class="keyword">except</span> redis.ResponseError:
+    <span class="keyword">pass</span>  <span class="comment"># Group already exists</span>
+
+<span class="comment"># Consumer reads from the group</span>
+<span class="keyword">def</span> <span class="func">consume_from_group</span>(consumer_name: str):
+    entries = client.xreadgroup(
+        <span class="string">"feature_writers"</span>,  <span class="comment"># group name</span>
+        consumer_name,            <span class="comment"># consumer name</span>
+        {stream_key: <span class="string">">"</span>},        <span class="comment"># ">" means new messages only</span>
+        count=<span class="num">50</span>,
+        block=<span class="num">2000</span>,
+    )
+
+    <span class="keyword">if not</span> entries:
+        <span class="keyword">return</span>
+
+    <span class="keyword">for</span> stream, messages <span class="keyword">in</span> entries:
+        <span class="keyword">for</span> msg_id, data <span class="keyword">in</span> messages:
+            entity_id = data[<span class="string">"entity_id"</span>]
+            features = json.loads(data[<span class="string">"features"</span>])
+
+            <span class="comment"># Write to online store</span>
+            feature_key = <span class="string">f"fs:v1:user_profile:{entity_id}"</span>
+            client.hset(feature_key, mapping={k: <span class="func">str</span>(v) <span class="keyword">for</span> k, v <span class="keyword">in</span> features.items()})
+
+            <span class="comment"># Acknowledge processing</span>
+            client.xack(stream_key, <span class="string">"feature_writers"</span>, msg_id)
+
+<span class="comment"># Run workers (each on a different process/machine)</span>
+consume_from_group(<span class="string">"worker-1"</span>)
+consume_from_group(<span class="string">"worker-2"</span>)</code></pre>
+
+<div class="callout">
+<p><strong>Consumer Group Benefits:</strong> Messages are distributed across workers — each message is delivered to exactly one consumer in the group. If a worker crashes, unacknowledged messages can be reclaimed with <code>XPENDING</code> and <code>XCLAIM</code>. This gives you at-least-once delivery semantics.</p>
+</div>
+
+<h2>Valkey Streams Command Reference</h2>
+<table>
+<tr><th>Operation</th><th>Command</th><th>Latency</th></tr>
+<tr><td>Publish message</td><td><code>XADD stream * field value ...</code></td><td>~0.1ms</td></tr>
+<tr><td>Read new messages</td><td><code>XREAD COUNT 100 BLOCK 1000 STREAMS key id</code></td><td>~0.1ms + block</td></tr>
+<tr><td>Batch publish (pipeline)</td><td>Pipeline + <code>XADD</code></td><td>~2ms (1000 msgs)</td></tr>
+<tr><td>Trim stream</td><td><code>XTRIM stream MAXLEN 10000</code></td><td>~0.1ms</td></tr>
+<tr><td>Stream length</td><td><code>XLEN stream</code></td><td>~0.1ms</td></tr>
+<tr><td>Group read</td><td><code>XREADGROUP GROUP name consumer ...</code></td><td>~0.1ms + block</td></tr>
+<tr><td>Acknowledge</td><td><code>XACK stream group id</code></td><td>~0.1ms</td></tr>
+</table>
+
+<div class="callout">
+<p><strong>What's Next:</strong> Learn how to serve feature vectors directly to ML models — scikit-learn, PyTorch, and LLM chains — with a FastAPI integration example.</p>
+</div>
+
+<div class="nav-prev-next">
+<a href="03-realtime-aggregations.html" class="prev">
+<span class="label">← Previous</span>
+<span class="title">03 — Real-Time Aggregations</span>
+</a>
+<a href="05-ml-integration.html" class="next">
+<span class="label">Next →</span>
+<span class="title">05 — ML Model Integration</span>
+</a>
+</div>
+</article>
+</body>
+</html>

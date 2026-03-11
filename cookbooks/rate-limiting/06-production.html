@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>06 — Production Patterns — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
+<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/rate-limiting/">Cookbooks</a><a href="/demo/rate-limiter.html">Demo</a><a href="https://github.com/valkey-io" target="_blank">GitHub</a></div>
+</div></nav>
+
+<article>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/rate-limiting/">Rate Limiting</a> → 06 Production</div>
+<div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~30 min</span></div>
+
+<h1>Production <span class="gradient">Patterns</span></h1>
+<p class="lead">Battle-tested patterns for running rate limiters in production AI systems.</p>
+
+<h2>Pattern 1: Retry-After Headers</h2>
+<p>Always tell clients <strong>when</strong> to retry:</p>
+<pre><code><span class="keyword">from</span> fastapi <span class="keyword">import</span> FastAPI, Response, HTTPException
+
+app = FastAPI()
+
+@app.post(<span class="string">"/api/chat"</span>)
+<span class="keyword">async def</span> <span class="func">chat</span>(prompt: str, response: Response):
+    result = limiter.check(tokens=count_tokens(prompt))
+
+    response.headers[<span class="string">"X-RateLimit-Limit"</span>] = <span class="func">str</span>(result.max_requests)
+    response.headers[<span class="string">"X-RateLimit-Remaining"</span>] = <span class="func">str</span>(result.remaining)
+    response.headers[<span class="string">"X-RateLimit-Reset"</span>] = <span class="func">str</span>(result.reset_at)
+
+    <span class="keyword">if not</span> result.allowed:
+        response.headers[<span class="string">"Retry-After"</span>] = <span class="func">str</span>(<span class="func">int</span>(result.retry_after_seconds))
+        <span class="keyword">raise</span> HTTPException(status_code=<span class="num">429</span>, detail={
+            <span class="string">"error"</span>: <span class="string">"rate_limit_exceeded"</span>,
+            <span class="string">"retry_after_seconds"</span>: result.retry_after_seconds,
+        })
+    <span class="keyword">return await</span> call_llm(prompt)</code></pre>
+
+<h2>Pattern 2: Graceful Degradation</h2>
+<p>Don't hard-fail — degrade gracefully through model tiers, cache, then queue:</p>
+<pre><code><span class="keyword">async def</span> <span class="func">smart_llm_call</span>(prompt, user_id):
+    <span class="comment"># Tier 1: Preferred model</span>
+    result = limiter.check(user_id, model=<span class="string">"gpt-4"</span>)
+    <span class="keyword">if</span> result.allowed:
+        <span class="keyword">return await</span> call_llm(prompt, model=<span class="string">"gpt-4"</span>)
+
+    <span class="comment"># Tier 2: Cheaper model</span>
+    result = limiter.check(user_id, model=<span class="string">"gpt-3.5-turbo"</span>)
+    <span class="keyword">if</span> result.allowed:
+        <span class="keyword">return await</span> call_llm(prompt, model=<span class="string">"gpt-3.5-turbo"</span>)
+
+    <span class="comment"># Tier 3: Semantic cache</span>
+    cached = <span class="keyword">await</span> semantic_cache_lookup(prompt)
+    <span class="keyword">if</span> cached:
+        <span class="keyword">return</span> {<span class="string">"response"</span>: cached, <span class="string">"source"</span>: <span class="string">"cache"</span>}
+
+    <span class="comment"># Tier 4: Queue for later</span>
+    <span class="keyword">await</span> enqueue_request(user_id, prompt)
+    <span class="keyword">return</span> {<span class="string">"response"</span>: <span class="string">"Queued for processing"</span>, <span class="string">"source"</span>: <span class="string">"queued"</span>}</code></pre>
+
+<h2>Pattern 3: Circuit Breaker</h2>
+<p>If Valkey goes down, fail-open (allow requests) rather than blocking everything:</p>
+<pre><code><span class="keyword">class</span> <span class="func">RateLimiterWithCircuitBreaker</span>:
+    <span class="keyword">def</span> <span class="func">__init__</span>(self):
+        self.failure_count = <span class="num">0</span>
+        self.failure_threshold = <span class="num">3</span>
+        self.circuit_open_until = <span class="num">0</span>
+
+    <span class="keyword">def</span> <span class="func">check</span>(self, tokens):
+        <span class="keyword">if</span> time.time() < self.circuit_open_until:
+            <span class="keyword">return</span> {<span class="string">"allowed"</span>: <span class="keyword">True</span>, <span class="string">"source"</span>: <span class="string">"circuit_breaker"</span>}
+        <span class="keyword">try</span>:
+            result = self._do_check(tokens)
+            self.failure_count = <span class="num">0</span>
+            <span class="keyword">return</span> result
+        <span class="keyword">except</span> Exception:
+            self.failure_count += <span class="num">1</span>
+            <span class="keyword">if</span> self.failure_count >= self.failure_threshold:
+                self.circuit_open_until = time.time() + <span class="num">30</span>
+            <span class="keyword">return</span> {<span class="string">"allowed"</span>: <span class="keyword">True</span>, <span class="string">"source"</span>: <span class="string">"fallback"</span>}</code></pre>
+
+<h2>Pattern 4: Request Queuing with Streams</h2>
+<pre><code><span class="keyword">def</span> <span class="func">enqueue_request</span>(user_id, prompt, model=<span class="string">"gpt-4"</span>):
+    client.xadd(<span class="string">"llm:queue"</span>, {
+        <span class="string">"user_id"</span>: user_id,
+        <span class="string">"prompt"</span>: prompt,
+        <span class="string">"model"</span>: model,
+        <span class="string">"queued_at"</span>: <span class="func">str</span>(time.time()),
+    }, maxlen=<span class="num">10000</span>)</code></pre>
+
+<h2>Production Checklist</h2>
+<ul>
+<li><strong>Retry-After headers</strong> on every 429 response</li>
+<li><strong>Circuit breaker</strong> for Valkey connection failures</li>
+<li><strong>Fail-open policy</strong> — never block users because of infra issues</li>
+<li><strong>Graceful degradation</strong> — cheaper models before hard rejection</li>
+<li><strong>Request queuing</strong> — don't lose requests, queue them</li>
+<li><strong>Observability</strong> — log every allow/deny decision</li>
+<li><strong>Dynamic config</strong> — update limits without redeploying</li>
+<li><strong>Connection pooling</strong> — reuse Valkey connections</li>
+<li><strong>Lua scripts</strong> — atomic check-and-increment for correctness</li>
+</ul>
+
+<h2>Valkey Configuration</h2>
+<pre><code><span class="comment"># valkey.conf optimizations for rate limiting</span>
+maxmemory 256mb
+maxmemory-policy allkeys-lru
+hz 100
+tcp-keepalive 300
+timeout 0</code></pre>
+
+<div class="callout">
+<p><strong>Full Series Complete!</strong> You now have everything you need to implement production-grade rate limiting for AI workloads. All code is open source — <a href="https://github.com/valkey-io">clone the repo</a> and start shipping.</p>
+</div>
+
+<div class="nav-prev-next">
+<a href="05-cost-based.html"><span class="label">← Previous</span><span class="title">05 — Cost-Based Limiting</span></a>
+<a href="/cookbooks/rate-limiting/" class="next"><span class="label">Back to →</span><span class="title">All Cookbooks</span></a>
+</div>
+</article>
+</body>
+</html>

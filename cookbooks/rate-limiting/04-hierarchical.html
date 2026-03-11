@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>04 — Hierarchical Rate Limits — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
+<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/rate-limiting/">Cookbooks</a><a href="/demo/rate-limiter.html">Demo</a><a href="https://github.com/valkey-io" target="_blank">GitHub</a></div>
+</div></nav>
+
+<article>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/rate-limiting/">Rate Limiting</a> → 04 Hierarchical</div>
+<div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~25 min</span></div>
+
+<h1>Hierarchical <span class="gradient">Rate Limits</span></h1>
+<p class="lead">Enterprise AI platforms need cascading limits: Organization → Team → User → Agent → Model. Every tier must pass for a request to be allowed.</p>
+
+<h2>The Problem</h2>
+<pre><code>Acme Corp (org):     1,000,000 tokens/hour
+  ├─ Engineering:      500,000 tokens/hour
+  │   ├─ alice:        100,000 tokens/hour
+  │   │   ├─ agent-1:   25,000 tokens/hour
+  │   │   └─ agent-2:   25,000 tokens/hour
+  │   └─ bob:          100,000 tokens/hour
+  └─ Marketing:       200,000 tokens/hour
+
+Alice's agent-1 calls GPT-4. We check:
+  1. Is the org under 1M tokens? ✅
+  2. Is engineering under 500K? ✅
+  3. Is alice under 100K? ✅
+  4. Is agent-1 under 25K? ❌ → DENIED</code></pre>
+
+<h2>Step 1: Define Tiers</h2>
+<pre><code><span class="keyword">from</span> dataclasses <span class="keyword">import</span> dataclass
+
+@dataclass
+<span class="keyword">class</span> <span class="func">Tier</span>:
+    name: str           <span class="comment"># "org", "team", "user", "agent", "model"</span>
+    identifier: str     <span class="comment"># "acme-corp", "engineering", "alice"</span>
+    max_requests: int
+    max_tokens: int
+    window_seconds: int
+
+tiers = [
+    Tier(<span class="string">"org"</span>, <span class="string">"acme-corp"</span>, <span class="num">10000</span>, <span class="num">1_000_000</span>, <span class="num">3600</span>),
+    Tier(<span class="string">"team"</span>, <span class="string">"engineering"</span>, <span class="num">5000</span>, <span class="num">500_000</span>, <span class="num">3600</span>),
+    Tier(<span class="string">"user"</span>, <span class="string">"alice"</span>, <span class="num">1000</span>, <span class="num">100_000</span>, <span class="num">3600</span>),
+    Tier(<span class="string">"agent"</span>, <span class="string">"agent-research-1"</span>, <span class="num">200</span>, <span class="num">25_000</span>, <span class="num">3600</span>),
+]</code></pre>
+
+<h2>Step 2: Cascading Check with Pipeline</h2>
+<p>The key insight: use a <strong>Valkey pipeline</strong> to check all tiers in a single round-trip:</p>
+<pre><code><span class="keyword">def</span> <span class="func">hierarchical_check</span>(tiers: list, tokens: int) -> dict:
+    now = time.time()
+
+    <span class="comment"># Phase 1: Read all counters in one pipeline</span>
+    pipe = client.pipeline(transaction=<span class="keyword">False</span>)
+    <span class="keyword">for</span> tier <span class="keyword">in</span> tiers:
+        window_num = <span class="func">int</span>(now // tier.window_seconds)
+        pipe.get(<span class="string">f"hier:{tier.name}:{tier.identifier}:req:{window_num}"</span>)
+        pipe.get(<span class="string">f"hier:{tier.name}:{tier.identifier}:tok:{window_num}"</span>)
+    results = pipe.execute()
+
+    <span class="comment"># Phase 2: Check each tier</span>
+    blocked_by = <span class="keyword">None</span>
+    <span class="keyword">for</span> i, tier <span class="keyword">in</span> <span class="func">enumerate</span>(tiers):
+        current_req = <span class="func">int</span>(results[i * <span class="num">2</span>] <span class="keyword">or</span> <span class="num">0</span>)
+        current_tok = <span class="func">int</span>(results[i * <span class="num">2</span> + <span class="num">1</span>] <span class="keyword">or</span> <span class="num">0</span>)
+        <span class="keyword">if</span> current_req + <span class="num">1</span> > tier.max_requests <span class="keyword">or</span> current_tok + tokens > tier.max_tokens:
+            blocked_by = tier.name
+            <span class="keyword">break</span>
+
+    <span class="comment"># Phase 3: If allowed, increment all tiers atomically</span>
+    <span class="keyword">if not</span> blocked_by:
+        pipe = client.pipeline(transaction=<span class="keyword">True</span>)
+        <span class="keyword">for</span> tier <span class="keyword">in</span> tiers:
+            window_num = <span class="func">int</span>(now // tier.window_seconds)
+            req_key = <span class="string">f"hier:{tier.name}:{tier.identifier}:req:{window_num}"</span>
+            tok_key = <span class="string">f"hier:{tier.name}:{tier.identifier}:tok:{window_num}"</span>
+            pipe.incr(req_key); pipe.expire(req_key, tier.window_seconds)
+            pipe.incrby(tok_key, tokens); pipe.expire(tok_key, tier.window_seconds)
+        pipe.execute()
+
+    <span class="keyword">return</span> {<span class="string">"allowed"</span>: blocked_by <span class="keyword">is None</span>, <span class="string">"blocked_by"</span>: blocked_by}</code></pre>
+
+<div class="callout">
+<p><strong>Performance:</strong> Pipelines keep it to <strong>2 round trips</strong> regardless of tier count. 5 tiers = 10 GET + 20 INCR/EXPIRE = ~0.5ms total.</p>
+</div>
+
+<h2>Performance</h2>
+<table>
+<tr><th>Tiers</th><th>Pipeline Commands</th><th>Round Trips</th><th>Latency</th></tr>
+<tr><td>3</td><td>6 GET + 12 INCR/EXPIRE</td><td>2</td><td>~0.3ms</td></tr>
+<tr><td>5</td><td>10 GET + 20 INCR/EXPIRE</td><td>2</td><td>~0.5ms</td></tr>
+<tr><td>7</td><td>14 GET + 28 INCR/EXPIRE</td><td>2</td><td>~0.7ms</td></tr>
+</table>
+
+<div class="nav-prev-next">
+<a href="03-agent-limiting.html"><span class="label">← Previous</span><span class="title">03 — Agent Rate Limiting</span></a>
+<a href="05-cost-based.html" class="next"><span class="label">Next →</span><span class="title">05 — Cost-Based Limiting</span></a>
+</div>
+</article>
+</body>
+</html>

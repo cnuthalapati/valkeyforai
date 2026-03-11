@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>01 — Getting Started with Feature Store — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
+<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/feature-store/">Cookbooks</a><a href="/demo/feature-store.html">Demo</a><a href="https://github.com/valkey-io" target="_blank">GitHub</a></div>
+</div></nav>
+
+<article>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/feature-store/">Feature Store</a> → 01 Getting Started</div>
+<div class="meta"><span class="diff-easy">Beginner</span><span class="lang">Python</span><span class="lang">~5 min</span></div>
+
+<h1>Getting <span class="gradient">Started</span></h1>
+<p class="lead">Start Valkey, install dependencies, and store your first ML features. By the end you'll have a working feature store that reads and writes features in under a millisecond.</p>
+
+<h2>Why Valkey for Feature Stores?</h2>
+<p>ML models need features at inference time. A feature store bridges offline training and online serving. Valkey is the ideal online store because:</p>
+<ul>
+<li><strong>Sub-millisecond reads</strong> — HGETALL returns a full feature vector in ~0.1ms</li>
+<li><strong>Atomic writes</strong> — HSET updates features without race conditions</li>
+<li><strong>Built-in TTL</strong> — Stale features expire automatically with EXPIRE</li>
+<li><strong>Batch pipelines</strong> — Fetch 100 entities in ~0.3ms with pipelining</li>
+</ul>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>Docker installed (or a running Valkey instance)</li>
+<li>Python 3.9+</li>
+</ul>
+
+<h2>Step 1: Start Valkey</h2>
+<pre><code>docker run -d --name valkey -p 6379:6379 valkey/valkey:latest</code></pre>
+<p>Verify it's running:</p>
+<pre><code>redis-cli ping
+<span class="comment"># PONG</span></code></pre>
+
+<h2>Step 2: Install Dependencies</h2>
+<pre><code>pip install redis</code></pre>
+<p>The <code>redis</code> Python package works with Valkey out of the box — no special drivers needed.</p>
+
+<h2>Step 3: Understand the Data Model</h2>
+<p>Every entity's features are stored as a <strong>Valkey Hash</strong>:</p>
+<pre><code><span class="comment"># Key format: fs:v1:{feature_view_name}:{entity_id}</span>
+<span class="comment"># Example:</span>
+fs:v1:user_profile:user_123 → {
+    age: "28",
+    lifetime_value: "1250.50",
+    segment: "premium",
+    _updated_at: "1710000000.0",
+    _feature_view: "user_profile"
+}</code></pre>
+
+<div class="callout">
+<p><strong>Key Insight:</strong> Valkey Hashes map perfectly to feature vectors. Each field is a feature, each key is an entity. One <code>HGETALL</code> returns the full feature vector. One <code>HMGET</code> returns selective features. Both complete in ~0.1ms.</p>
+</div>
+
+<h2>Step 4: Write Features with Raw Valkey Commands</h2>
+<p>Let's start with raw Valkey commands to understand what's happening under the hood:</p>
+<pre><code><span class="keyword">import</span> redis
+<span class="keyword">import</span> time
+
+client = redis.Redis(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>, decode_responses=<span class="keyword">True</span>)
+
+<span class="comment"># Write features for a user</span>
+key = <span class="string">"fs:v1:user_profile:user_001"</span>
+features = {
+    <span class="string">"age"</span>: <span class="string">"28"</span>,
+    <span class="string">"lifetime_value"</span>: <span class="string">"1250.50"</span>,
+    <span class="string">"segment"</span>: <span class="string">"premium"</span>,
+    <span class="string">"_updated_at"</span>: <span class="func">str</span>(time.time()),
+    <span class="string">"_feature_view"</span>: <span class="string">"user_profile"</span>,
+}
+
+<span class="comment"># HSET — write all features atomically</span>
+client.hset(key, mapping=features)
+
+<span class="comment"># Set TTL — features expire after 1 hour</span>
+client.expire(key, <span class="num">3600</span>)
+
+<span class="func">print</span>(<span class="string">"✅ Features written"</span>)</code></pre>
+
+<h2>Step 5: Read Features Back</h2>
+<pre><code><span class="comment"># HGETALL — read all features for an entity</span>
+result = client.hgetall(<span class="string">"fs:v1:user_profile:user_001"</span>)
+<span class="func">print</span>(result)
+<span class="comment"># {'age': '28', 'lifetime_value': '1250.50', 'segment': 'premium', ...}</span>
+
+<span class="comment"># HMGET — read only specific features</span>
+age, ltv = client.hmget(<span class="string">"fs:v1:user_profile:user_001"</span>, [<span class="string">"age"</span>, <span class="string">"lifetime_value"</span>])
+<span class="func">print</span>(<span class="string">f"age={age}, ltv={ltv}"</span>)
+<span class="comment"># age=28, ltv=1250.50</span></code></pre>
+
+<h2>Step 6: Use the Library</h2>
+<p>Now let's do the same thing with the feature store library, which handles serialization, TTL, and metadata for you:</p>
+<pre><code><span class="keyword">from</span> src <span class="keyword">import</span> ValkeyFeatureStore, Entity, FeatureView, Feature, FeatureType
+
+<span class="comment"># Connect</span>
+store = ValkeyFeatureStore(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>)
+
+<span class="comment"># Define an entity</span>
+user = Entity(name=<span class="string">"user"</span>, join_keys=[<span class="string">"user_id"</span>])
+
+<span class="comment"># Define a feature view (schema for this entity's features)</span>
+user_features = FeatureView(
+    name=<span class="string">"user_profile"</span>,
+    entity=user,
+    features=[
+        Feature(<span class="string">"age"</span>, FeatureType.INT),
+        Feature(<span class="string">"lifetime_value"</span>, FeatureType.FLOAT),
+        Feature(<span class="string">"segment"</span>, FeatureType.STRING),
+    ],
+    ttl=<span class="num">3600</span>,  <span class="comment"># 1 hour</span>
+)
+
+<span class="comment"># Register it with the store</span>
+store.register(user_features)
+
+<span class="comment"># Write — automatically serializes, sets TTL, adds metadata</span>
+store.write(<span class="string">"user_profile"</span>, <span class="string">"user_001"</span>, {
+    <span class="string">"age"</span>: <span class="num">28</span>,
+    <span class="string">"lifetime_value"</span>: <span class="num">1250.50</span>,
+    <span class="string">"segment"</span>: <span class="string">"premium"</span>,
+})
+
+<span class="comment"># Read — automatically deserializes to correct Python types</span>
+features = store.read(<span class="string">"user_profile"</span>, <span class="string">"user_001"</span>)
+<span class="func">print</span>(features)
+<span class="comment"># {'age': 28, 'lifetime_value': 1250.5, 'segment': 'premium'}</span>
+<span class="comment"># Note: age is int, ltv is float — types are preserved!</span></code></pre>
+
+<h2>How It Works Under the Hood</h2>
+<table>
+<tr><th>Operation</th><th>Valkey Command</th><th>Latency</th></tr>
+<tr><td>Write features</td><td><code>HSET key field1 val1 field2 val2 ...</code></td><td>~0.1ms</td></tr>
+<tr><td>Set TTL</td><td><code>EXPIRE key 3600</code></td><td>~0.1ms</td></tr>
+<tr><td>Write + TTL (pipelined)</td><td><code>HSET</code> + <code>EXPIRE</code> in pipeline</td><td>~0.2ms</td></tr>
+<tr><td>Read all features</td><td><code>HGETALL key</code></td><td>~0.1ms</td></tr>
+<tr><td>Read specific features</td><td><code>HMGET key field1 field2</code></td><td>~0.1ms</td></tr>
+</table>
+
+<div class="callout">
+<p><strong>What's Next:</strong> In the next cookbook, we'll cover batch serving — fetching features for 100+ entities in a single round-trip using Valkey pipelines.</p>
+</div>
+
+<div class="nav-prev-next">
+<div></div>
+<a href="02-online-serving.html" class="next">
+<span class="label">Next →</span>
+<span class="title">02 — Online Feature Serving</span>
+</a>
+</div>
+</article>
+</body>
+</html>

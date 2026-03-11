@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Valkey for AI — Production-Ready Patterns for AI Workloads</title>
+    <meta name="description" content="Cookbooks, reference architectures, and runnable demos for using Valkey in real AI workloads. Semantic caching, vector search, conversation memory, and more.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- NAV -->
+    <nav class="nav" id="nav">
+        <div class="nav-inner">
+            <a href="#" class="nav-logo">
+                <img src="valkey-logo.svg" alt="Valkey" height="28" style="display:block">
+                <span class="accent" style="font-size:18px;font-weight:700;margin-left:2px">for ai</span>
+            </a>
+            <div class="nav-links">
+                <a href="#use-cases">Use Cases</a>
+                <a href="#how-it-works">How It Works</a>
+                <a href="#cookbooks">Cookbooks</a>
+                <a href="#architectures">Architectures</a>
+                <a href="/demo/rate-limiter.html">Live Demo</a>
+                <a href="https://github.com/valkey-io" target="_blank" class="nav-github">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                    GitHub
+                </a>
+            </div>
+            <button class="nav-mobile-toggle" id="mobileToggle" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- HERO -->
+    <section class="hero" id="hero">
+        <div class="hero-gradient"></div>
+        <div class="hero-content">
+            <div class="hero-badge anim-fade-up">Open Source • Production Ready</div>
+            <h1 class="hero-title anim-fade-up">
+                Valkey for AI.<br><span class="gradient-text">Solved.</span>
+            </h1>
+            <p class="hero-subtitle anim-fade-up">
+                Cookbooks, reference architectures, and runnable demos for every AI pattern — semantic caching, vector search, conversation memory, agent state, and more.
+            </p>
+            <div class="hero-actions anim-fade-up">
+                <a href="#use-cases" class="btn btn-primary">Explore Use Cases</a>
+                <a href="https://github.com/valkey-io" target="_blank" class="btn btn-secondary">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                    View on GitHub
+                </a>
+            </div>
+            <div class="hero-stats anim-fade-up">
+                <div class="stat"><span class="stat-num">8+</span><span class="stat-label">Use Cases</span></div>
+                <div class="stat-divider"></div>
+                <div class="stat"><span class="stat-num">12+</span><span class="stat-label">Cookbooks</span></div>
+                <div class="stat-divider"></div>
+                <div class="stat"><span class="stat-num">100%</span><span class="stat-label">Open Source</span></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- USE CASES -->
+    <section class="section" id="use-cases">
+        <div class="container">
+            <div class="section-header anim-fade-up">
+                <span class="section-tag">Use Cases</span>
+                <h2 class="section-title">Every AI pattern.<br>One data store.</h2>
+                <p class="section-subtitle">From caching LLM responses to powering real-time vector search, Valkey is the high-performance backbone for modern AI applications.</p>
+            </div>
+            <div class="bento-grid">
+                <div class="bento-card bento-large anim-fade-up" data-delay="0">
+                    <div class="bento-icon" style="--icon-bg: #6366f1">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8a3 3 0 0 0-3 3"/></svg>
+                    </div>
+                    <h3>Semantic Caching</h3>
+                    <p>Cache LLM responses by meaning, not just exact match. Cut costs by 60%+ and slash latency from seconds to milliseconds.</p>
+                    <div class="bento-tags"><span>LLM</span><span>Cost Savings</span><span>Low Latency</span></div>
+                </div>
+                <div class="bento-card anim-fade-up" data-delay="100">
+                    <div class="bento-icon" style="--icon-bg: #8b5cf6">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    </div>
+                    <h3>Conversation Memory</h3>
+                    <p>Scalable, low-latency session storage for chatbot and agent conversations with TTL-based expiry.</p>
+                    <div class="bento-tags"><span>Chatbots</span><span>Sessions</span></div>
+                </div>
+                <div class="bento-card anim-fade-up" data-delay="200">
+                    <div class="bento-icon" style="--icon-bg: #ec4899">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                    </div>
+                    <h3>Vector Search</h3>
+                    <p>Native vector similarity search with HNSW and FLAT indexing. Sub-millisecond nearest-neighbor queries.</p>
+                    <div class="bento-tags"><span>Embeddings</span><span>Search</span></div>
+                </div>
+                <div class="bento-card anim-fade-up" data-delay="100">
+                    <div class="bento-icon" style="--icon-bg: #f59e0b">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    </div>
+                    <h3>Agent Session State</h3>
+                    <p>Persist tool calls, reasoning chains, and intermediate results for multi-step AI agents with atomic operations.</p>
+                    <div class="bento-tags"><span>Agents</span><span>State</span></div>
+                </div>
+                <div class="bento-card anim-fade-up" data-delay="200">
+                    <div class="bento-icon" style="--icon-bg: #10b981">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    </div>
+                    <h3><a href="/cookbooks/rate-limiting/" style="color:inherit">Rate Limiting</a></h3>
+                    <p>Token-aware rate limiting for LLM APIs. Sliding window counters and token bucket patterns built in.</p>
+                    <div class="bento-tags"><span>API</span><span>Protection</span><span><a href="/cookbooks/rate-limiting/" style="color:inherit">6 Cookbooks →</a></span><span><a href="/demo/rate-limiter.html" style="color:inherit">Live Demo →</a></span></div>
+                </div>
+                <div class="bento-card bento-large anim-fade-up" data-delay="300">
+                    <div class="bento-icon" style="--icon-bg: #06b6d4">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    </div>
+                    <h3>Streaming Response Buffers</h3>
+                    <p>Buffer and broadcast streaming LLM responses with Pub/Sub and Streams. Perfect for real-time UIs and multi-client delivery.</p>
+                    <div class="bento-tags"><span>Streaming</span><span>Real-time</span><span>Pub/Sub</span></div>
+                </div>
+                <div class="bento-card anim-fade-up" data-delay="100">
+                    <div class="bento-icon" style="--icon-bg: #f43f5e">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                    </div>
+                    <h3>RAG Pipelines</h3>
+                    <p>Retrieval-Augmented Generation with vector search, document chunking, and metadata filtering — all in Valkey.</p>
+                    <div class="bento-tags"><span>RAG</span><span>Retrieval</span></div>
+                </div>
+                <div class="bento-card anim-fade-up" data-delay="200">
+                    <div class="bento-icon" style="--icon-bg: #a855f7">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    </div>
+                    <h3><a href="/cookbooks/feature-store/" style="color:inherit">Feature Store</a></h3>
+                    <p>Real-time feature serving for ML models. Microsecond reads for online inference at scale.</p>
+                    <div class="bento-tags"><span>ML</span><span>Inference</span><span><a href="/cookbooks/feature-store/" style="color:inherit">6 Cookbooks →</a></span><span><a href="/demo/feature-store.html" style="color:inherit">Live Demo →</a></span></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- HOW IT WORKS -->
+    <section class="section section-dark" id="how-it-works">
+        <div class="container">
+            <div class="section-header anim-fade-up">
+                <span class="section-tag">How It Works</span>
+                <h2 class="section-title">From problem to production<br>in three steps.</h2>
+            </div>
+            <div class="steps-grid">
+                <div class="step-card anim-fade-up" data-delay="0">
+                    <div class="step-number">01</div>
+                    <h3>Identify Your Pattern</h3>
+                    <p>Browse real AI use cases — semantic caching, vector search, agent memory, and more. Find the pattern that matches your problem.</p>
+                </div>
+                <div class="step-connector anim-fade-up">
+                    <svg width="40" height="2" viewBox="0 0 40 2"><line x1="0" y1="1" x2="40" y2="1" stroke="rgba(255,255,255,0.2)" stroke-width="2" stroke-dasharray="4 4"/></svg>
+                </div>
+                <div class="step-card anim-fade-up" data-delay="150">
+                    <div class="step-number">02</div>
+                    <h3>Pick an Architecture</h3>
+                    <p>Each pattern includes a reference architecture, data model, and clear explanation of why Valkey is the right fit.</p>
+                </div>
+                <div class="step-connector anim-fade-up">
+                    <svg width="40" height="2" viewBox="0 0 40 2"><line x1="0" y1="1" x2="40" y2="1" stroke="rgba(255,255,255,0.2)" stroke-width="2" stroke-dasharray="4 4"/></svg>
+                </div>
+                <div class="step-card anim-fade-up" data-delay="300">
+                    <div class="step-number">03</div>
+                    <h3>Ship It</h3>
+                    <p>Clone a working demo, follow a step-by-step cookbook, or integrate the reference code directly into your application.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- COOKBOOKS -->
+    <section class="section" id="cookbooks">
+        <div class="container">
+            <div class="section-header anim-fade-up">
+                <span class="section-tag">Cookbooks</span>
+                <h2 class="section-title">Step-by-step guides.<br>Copy, paste, ship.</h2>
+                <p class="section-subtitle">Production-tested recipes for the most common AI + Valkey integration patterns.</p>
+            </div>
+            <div class="cookbook-grid">
+                <article class="cookbook-card anim-fade-up" data-delay="0">
+                    <div class="cookbook-difficulty easy">Beginner</div>
+                    <h3>Semantic Cache with LangChain</h3>
+                    <p>Build a semantic cache that stores and retrieves LLM responses based on embedding similarity using LangChain and Valkey.</p>
+                    <div class="cookbook-meta">
+                        <span class="cookbook-lang">Python</span>
+                        <span class="cookbook-time">~15 min</span>
+                    </div>
+                </article>
+                <article class="cookbook-card anim-fade-up" data-delay="100">
+                    <div class="cookbook-difficulty medium">Intermediate</div>
+                    <h3>RAG Pipeline with Vector Search</h3>
+                    <p>Set up a complete retrieval-augmented generation pipeline using Valkey as your vector store with HNSW indexing.</p>
+                    <div class="cookbook-meta">
+                        <span class="cookbook-lang">Python</span>
+                        <span class="cookbook-time">~30 min</span>
+                    </div>
+                </article>
+                <article class="cookbook-card anim-fade-up" data-delay="200">
+                    <div class="cookbook-difficulty easy">Beginner</div>
+                    <h3>Conversation Memory for Chatbots</h3>
+                    <p>Implement sliding-window conversation memory with automatic TTL expiry for stateless chatbot deployments.</p>
+                    <div class="cookbook-meta">
+                        <span class="cookbook-lang">TypeScript</span>
+                        <span class="cookbook-time">~10 min</span>
+                    </div>
+                </article>
+                <article class="cookbook-card anim-fade-up" data-delay="300">
+                    <div class="cookbook-difficulty hard">Advanced</div>
+                    <h3>Multi-Agent State Orchestration</h3>
+                    <p>Coordinate multiple AI agents with shared state, tool result caching, and reasoning chain persistence using Valkey Streams.</p>
+                    <div class="cookbook-meta">
+                        <span class="cookbook-lang">Python</span>
+                        <span class="cookbook-time">~45 min</span>
+                    </div>
+                </article>
+                <a href="/cookbooks/rate-limiting/" class="cookbook-card anim-fade-up" data-delay="100" style="text-decoration:none;color:inherit;display:block">
+                    <div class="cookbook-difficulty medium">Intermediate</div>
+                    <h3>Token-Aware Rate Limiting ↗</h3>
+                    <p>Build a sliding-window rate limiter that tracks both request count and token usage for OpenAI-compatible APIs.</p>
+                    <div class="cookbook-meta">
+                        <span class="cookbook-lang">Python</span>
+                        <span class="cookbook-time">6 Parts</span>
+                    </div>
+                </a>
+                <a href="/cookbooks/feature-store/" class="cookbook-card anim-fade-up" data-delay="200" style="text-decoration:none;color:inherit;display:block">
+                    <div class="cookbook-difficulty medium">Intermediate</div>
+                    <h3>Real-Time Feature Store ↗</h3>
+                    <p>Build a production feature store with Valkey Hashes for sub-millisecond feature serving, streaming updates, and freshness monitoring.</p>
+                    <div class="cookbook-meta">
+                        <span class="cookbook-lang">Python</span>
+                        <span class="cookbook-time">6 Parts</span>
+                    </div>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- ARCHITECTURES -->
+    <section class="section section-dark" id="architectures">
+        <div class="container">
+            <div class="section-header anim-fade-up">
+                <span class="section-tag">Reference Architectures</span>
+                <h2 class="section-title">Battle-tested blueprints<br>for production AI.</h2>
+                <p class="section-subtitle">Each architecture includes data models, scaling considerations, failure modes, and deployment patterns.</p>
+            </div>
+            <div class="arch-grid">
+                <div class="arch-card anim-fade-up" data-delay="0">
+                    <div class="arch-diagram">
+                        <div class="arch-node arch-node-app">App</div>
+                        <div class="arch-arrow">→</div>
+                        <div class="arch-node arch-node-valkey">Valkey</div>
+                        <div class="arch-arrow">→</div>
+                        <div class="arch-node arch-node-llm">LLM API</div>
+                    </div>
+                    <h3>Semantic Cache Layer</h3>
+                    <p>Intercept LLM calls, check for semantically similar cached responses, and only call the API on cache miss. Includes embedding generation, similarity threshold tuning, and cache invalidation strategies.</p>
+                    <div class="arch-details">
+                        <span>Vector Similarity</span>
+                        <span>Write-Through</span>
+                        <span>TTL Eviction</span>
+                    </div>
+                </div>
+                <div class="arch-card anim-fade-up" data-delay="150">
+                    <div class="arch-diagram">
+                        <div class="arch-node arch-node-app">Query</div>
+                        <div class="arch-arrow">→</div>
+                        <div class="arch-node arch-node-valkey">Valkey VSS</div>
+                        <div class="arch-arrow">→</div>
+                        <div class="arch-node arch-node-llm">LLM + Context</div>
+                    </div>
+                    <h3>RAG with Valkey Vector Store</h3>
+                    <p>Store document embeddings directly in Valkey. Query with vector similarity search, combine with metadata filters, and feed results into the LLM context window for grounded generation.</p>
+                    <div class="arch-details">
+                        <span>HNSW Index</span>
+                        <span>Hybrid Search</span>
+                        <span>Metadata Filters</span>
+                    </div>
+                </div>
+                <div class="arch-card anim-fade-up" data-delay="300">
+                    <div class="arch-diagram">
+                        <div class="arch-node arch-node-app">Agent</div>
+                        <div class="arch-arrow">→</div>
+                        <div class="arch-node arch-node-valkey">Valkey Streams</div>
+                        <div class="arch-arrow">→</div>
+                        <div class="arch-node arch-node-llm">Tool / LLM</div>
+                    </div>
+                    <h3>Multi-Agent Orchestration</h3>
+                    <p>Use Valkey Streams and Hashes to coordinate multi-agent workflows. Persist tool outputs, share state between agents, and implement reliable task queues with consumer groups.</p>
+                    <div class="arch-details">
+                        <span>Consumer Groups</span>
+                        <span>Atomic State</span>
+                        <span>Event Sourcing</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="section cta-section" id="cta">
+        <div class="container">
+            <div class="cta-card anim-fade-up">
+                <div class="cta-bg"></div>
+                <div class="cta-content">
+                    <h2>Start building with Valkey + AI today.</h2>
+                    <p>All code is open source. All patterns are production-tested. Clone a repo and start shipping.</p>
+                    <div class="cta-actions">
+                        <a href="https://github.com/valkey-io" target="_blank" class="btn btn-primary btn-large">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                            Explore on GitHub
+                        </a>
+                        <a href="#cookbooks" class="btn btn-secondary btn-large">Read the Cookbooks</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-inner">
+                <div class="footer-brand">
+                    <a href="#" class="nav-logo">
+                        <img src="valkey-logo.svg" alt="Valkey" height="22" style="display:block">
+                        <span class="accent" style="font-size:15px;font-weight:700;margin-left:2px">for ai</span>
+                    </a>
+                    <p>Practical patterns for using Valkey in AI workloads.</p>
+                </div>
+                <div class="footer-links-group">
+                    <div class="footer-col">
+                        <h4>Resources</h4>
+                        <a href="#use-cases">Use Cases</a>
+                        <a href="/cookbooks/rate-limiting/">Rate Limiting Cookbooks</a>
+                        <a href="/cookbooks/feature-store/">Feature Store Cookbooks</a>
+                        <a href="/demo/feature-store.html">Feature Store Demo</a>
+                        <a href="/demo/rate-limiter.html">Rate Limiter Demo</a>
+                        <a href="#architectures">Architectures</a>
+                    </div>
+                    <div class="footer-col">
+                        <h4>Community</h4>
+                        <a href="https://github.com/valkey-io" target="_blank">GitHub</a>
+                        <a href="https://valkey.io" target="_blank">Valkey.io</a>
+                        <a href="#">Discord</a>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 valkeyforai.com — Open source under MIT License</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
