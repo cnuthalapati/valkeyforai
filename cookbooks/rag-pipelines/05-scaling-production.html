@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scaling for Production — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+<style>
+:root{--accent:#f43f5e}
+.code-block{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:20px;margin:16px 0;font-family:'SF Mono','Fira Code',monospace;font-size:13px;line-height:1.7;overflow-x:auto}
+.code-block .cmd{color:#f43f5e}
+.code-block .str{color:#10b981}
+.code-block .num{color:#f59e0b}
+.code-block .comment{color:rgba(245,245,247,.4)}
+.section{margin:40px 0}
+.section h2{font-size:24px;font-weight:800;margin-bottom:16px}
+.section p{color:rgba(245,245,247,.7);line-height:1.7;margin-bottom:16px}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px}
+th,td{padding:12px 16px;text-align:left;border-bottom:1px solid rgba(255,255,255,.08)}
+th{color:rgba(245,245,247,.5);font-weight:600;font-size:11px;text-transform:uppercase}
+td{color:rgba(245,245,247,.8)}
+.nav-footer{display:flex;justify-content:space-between;margin-top:48px;padding-top:24px;border-top:1px solid rgba(255,255,255,.08)}
+.nav-footer a{color:#f43f5e;text-decoration:none;font-weight:600;font-size:14px}
+</style>
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent" style="color:#f43f5e">for ai</span></a>
+<div class="nav-links"><a href="/cookbooks/rag-pipelines/">All Cookbooks</a><a href="/demo/rag-pipeline.html">Demo</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div>
+</div></nav>
+
+<div style="max-width:800px;margin:0 auto;padding:48px 24px">
+<a href="/cookbooks/rag-pipelines/" style="color:#f43f5e;font-size:13px;text-decoration:none">← All RAG Cookbooks</a>
+
+<h1 style="font-size:36px;font-weight:900;margin:24px 0 12px">Scaling for <span style="background:linear-gradient(135deg,#f43f5e,#e11d48);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Production</span></h1>
+<p style="color:rgba(245,245,247,.6);font-size:16px;margin-bottom:32px">Handle millions of vectors with clustering, replication, and memory optimization.</p>
+
+<div class="section">
+<h2>Memory Estimation</h2>
+<p>Plan your infrastructure based on vector count and dimensions:</p>
+<table>
+<tr><th>Vectors</th><th>Dimensions</th><th>~Memory (HNSW)</th></tr>
+<tr><td>100K</td><td>1536</td><td>~1 GB</td></tr>
+<tr><td>1M</td><td>1536</td><td>~10 GB</td></tr>
+<tr><td>10M</td><td>1536</td><td>~100 GB</td></tr>
+<tr><td>100M</td><td>1536</td><td>~1 TB (cluster)</td></tr>
+</table>
+<p style="font-size:13px;color:rgba(245,245,247,.5)">Formula: vectors × dimensions × 4 bytes × 1.5 (HNSW overhead)</p>
+</div>
+
+<div class="section">
+<h2>Cluster Mode</h2>
+<p>Distribute data across multiple nodes for horizontal scaling:</p>
+<div class="code-block">
+<span class="comment"># Docker Compose for 3-node cluster</span>
+version: '3.8'
+services:
+  valkey-1:
+    image: valkey/valkey-stack:latest
+    command: valkey-server --cluster-enabled yes --cluster-node-timeout 5000
+    ports:
+      - "7001:6379"
+  valkey-2:
+    image: valkey/valkey-stack:latest
+    command: valkey-server --cluster-enabled yes --cluster-node-timeout 5000
+    ports:
+      - "7002:6379"
+  valkey-3:
+    image: valkey/valkey-stack:latest
+    command: valkey-server --cluster-enabled yes --cluster-node-timeout 5000
+    ports:
+      - "7003:6379"
+</div>
+<div class="code-block">
+<span class="comment"># Create cluster</span>
+valkey-cli --cluster create \
+  127.0.0.1:7001 127.0.0.1:7002 127.0.0.1:7003 \
+  --cluster-replicas 0
+</div>
+</div>
+
+<div class="section">
+<h2>Replication for HA</h2>
+<div class="code-block">
+<span class="comment"># valkey.conf for replica</span>
+replicaof primary.host 6379
+replica-read-only yes
+
+<span class="comment"># Connect to replicas for read scaling</span>
+primary = valkey.Valkey(host='primary', port=6379)
+replica = valkey.Valkey(host='replica', port=6379)
+
+<span class="comment"># Write to primary, read from replicas</span>
+primary.hset(key, mapping=data)
+results = replica.ft('idx').search(query)
+</div>
+</div>
+
+<div class="section">
+<h2>Memory Optimization</h2>
+<div class="code-block">
+<span class="comment"># valkey.conf optimizations</span>
+maxmemory 8gb
+maxmemory-policy volatile-lru
+
+<span class="comment"># Use FLOAT16 for 50% memory savings (slight accuracy loss)</span>
+<span class="cmd">FT.CREATE</span> idx ON HASH PREFIX 1 "doc:"
+  SCHEMA embedding VECTOR HNSW 6
+    TYPE <span class="str">FLOAT16</span>  <span class="comment"># Instead of FLOAT32</span>
+    DIM 1536
+    DISTANCE_METRIC COSINE
+
+<span class="comment"># Enable compression for hash values</span>
+hash-max-ziplist-entries 512
+hash-max-ziplist-value 64
+</div>
+</div>
+
+<div class="section">
+<h2>Connection Pooling</h2>
+<div class="code-block">
+<span class="comment"># Use connection pools in production</span>
+pool = valkey.ConnectionPool(
+    host='localhost',
+    port=6379,
+    max_connections=50,
+    decode_responses=False
+)
+client = valkey.Valkey(connection_pool=pool)
+
+<span class="comment"># Or use async with connection pool</span>
+pool = valkey.asyncio.ConnectionPool.from_url(
+    "redis://localhost:6379",
+    max_connections=50
+)
+</div>
+</div>
+
+<div class="section">
+<h2>AWS ElastiCache / MemoryDB</h2>
+<div class="code-block">
+<span class="comment"># Connect to ElastiCache cluster</span>
+client = valkey.Valkey(
+    host='my-cluster.cache.amazonaws.com',
+    port=6379,
+    ssl=True,
+    ssl_cert_reqs='required'
+)
+
+<span class="comment"># For cluster mode</span>
+from valkey.cluster import ValkeyCluster
+cluster = ValkeyCluster(
+    host='my-cluster.cache.amazonaws.com',
+    port=6379,
+    ssl=True
+)
+</div>
+</div>
+
+<div class="nav-footer">
+<a href="04-cache-invalidation.html">← Cache Invalidation</a>
+<a href="06-monitoring.html">Next: Monitoring →</a>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG Pipeline Interactive Demo — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#000;--card:rgba(255,255,255,.04);--brd:rgba(255,255,255,.08);--t1:#f5f5f7;--t2:rgba(245,245,247,.6);--t3:rgba(245,245,247,.4);--g1:#f43f5e;--g2:#e11d48;--green:#10b981;--red:#f43f5e;--yellow:#f59e0b;--blue:#3b82f6;--purple:#8b5cf6;--font:'Inter',system-ui,sans-serif}
+html{-webkit-font-smoothing:antialiased}
+body{font-family:var(--font);background:var(--bg);color:var(--t1);line-height:1.6;min-height:100vh}
+a{color:inherit;text-decoration:none}
+.nav{position:sticky;top:0;z-index:100;background:rgba(0,0,0,.8);backdrop-filter:blur(20px);border-bottom:1px solid var(--brd);padding:16px 32px}
+.nav-inner{max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.nav-logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:16px}
+.nav-logo img{height:24px}
+.accent{color:var(--g1)}
+.nav-links{display:flex;gap:24px;font-size:14px;color:var(--t2)}
+.nav-links a:hover{color:var(--t1)}
+.container{max-width:1200px;margin:0 auto;padding:32px 24px}
+.header{text-align:center;margin-bottom:40px}
+.header h1{font-size:36px;font-weight:900;letter-spacing:-.03em;margin-bottom:8px}
+.header h1 span{background:linear-gradient(135deg,var(--g1),var(--g2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.header p{color:var(--t2);font-size:15px}
+.tabs{display:flex;gap:8px;justify-content:center;margin-bottom:32px;flex-wrap:wrap}
+.tab{padding:10px 20px;border-radius:100px;font-size:13px;font-weight:600;border:1px solid var(--brd);background:transparent;color:var(--t2);cursor:pointer;transition:.2s}
+.tab:hover{border-color:rgba(255,255,255,.2);color:var(--t1)}
+.tab.active{background:linear-gradient(135deg,var(--g1),var(--g2));border-color:transparent;color:#fff}
+.demo-section{display:none}
+.demo-section.active{display:block}
+.grid{display:grid;grid-template-columns:340px 1fr;gap:24px}
+@media(max-width:900px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--brd);border-radius:16px;padding:24px}
+.panel h3{font-size:16px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.panel h3 .icon{width:20px;height:20px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--g1),var(--g2));border-radius:6px}
+.btn{padding:10px 20px;border-radius:10px;font-size:13px;font-weight:600;border:none;cursor:pointer;transition:.2s;font-family:var(--font);width:100%}
+.btn-primary{background:linear-gradient(135deg,var(--g1),var(--g2));color:#fff}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(244,63,94,.3)}
+.btn-secondary{background:rgba(59,130,246,.12);color:var(--blue);border:1px solid rgba(59,130,246,.2)}
+.btn-secondary:hover{background:rgba(59,130,246,.2)}
+.input-group{margin-bottom:16px}
+.input-group label{display:block;font-size:12px;color:var(--t3);margin-bottom:6px;font-weight:500}
+.input-group input,.input-group textarea,.input-group select{width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--brd);background:rgba(255,255,255,.03);color:var(--t1);font-family:var(--font);font-size:14px}
+.input-group textarea{resize:vertical;min-height:80px}
+.input-group input:focus,.input-group textarea:focus{outline:none;border-color:var(--g1)}
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.stat{background:rgba(255,255,255,.03);border:1px solid var(--brd);border-radius:12px;padding:14px;text-align:center}
+.stat .num{font-size:24px;font-weight:800;letter-spacing:-.02em}
+.stat .lbl{font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.stat.hit .num{color:var(--green)}
+.stat.miss .num{color:var(--yellow)}
+.log{background:rgba(255,255,255,.02);border:1px solid var(--brd);border-radius:12px;padding:16px;max-height:350px;overflow-y:auto;font-family:'SF Mono','Fira Code',monospace;font-size:12px;line-height:1.8}
+.log-entry{padding:4px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+.log-entry.hit{color:var(--green)}
+.log-entry.miss{color:var(--yellow)}
+.log-entry.info{color:var(--blue)}
+.log-entry .ts{color:var(--t3);margin-right:8px}
+.faq-list{display:flex;flex-direction:column;gap:8px;margin-bottom:20px;max-height:200px;overflow-y:auto}
+.faq-item{background:rgba(255,255,255,.02);border:1px solid var(--brd);border-radius:8px;padding:10px 14px;font-size:12px;cursor:pointer;transition:.2s}
+.faq-item:hover{border-color:var(--g1);background:rgba(244,63,94,.05)}
+.faq-item .q{color:var(--t1);font-weight:500;margin-bottom:2px}
+.faq-item .a{color:var(--t3);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.result-card{background:linear-gradient(135deg,rgba(244,63,94,.08),rgba(139,92,246,.08));border:1px solid rgba(244,63,94,.2);border-radius:12px;padding:20px;margin-top:16px}
+.result-card h4{font-size:14px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.result-card .badge{padding:3px 8px;border-radius:100px;font-size:10px;font-weight:600}
+.result-card .badge.hit{background:rgba(16,185,129,.2);color:var(--green)}
+.result-card .badge.miss{background:rgba(245,158,11,.2);color:var(--yellow)}
+.result-card p{font-size:13px;color:var(--t2);line-height:1.6}
+.result-card .meta{margin-top:12px;font-size:11px;color:var(--t3);display:flex;gap:16px}
+.similarity-bar{margin-top:12px}
+.similarity-bar label{font-size:11px;color:var(--t3);display:flex;justify-content:space-between;margin-bottom:4px}
+.similarity-bar .bar{height:6px;background:rgba(255,255,255,.1);border-radius:100px;overflow:hidden}
+.similarity-bar .fill{height:100%;border-radius:100px;background:linear-gradient(90deg,var(--g1),var(--purple))}
+.config-slider{margin-bottom:16px}
+.config-slider label{font-size:12px;color:var(--t3);display:flex;justify-content:space-between;margin-bottom:4px}
+.config-slider input[type=range]{width:100%;accent-color:var(--g1)}
+.config-slider .val{color:var(--g1);font-weight:600}
+.pipeline-viz{display:flex;align-items:center;gap:8px;margin:20px 0;flex-wrap:wrap;justify-content:center}
+.pipeline-step{background:rgba(255,255,255,.04);border:1px solid var(--brd);border-radius:8px;padding:8px 14px;font-size:11px;font-weight:600;color:var(--t2);transition:.3s}
+.pipeline-step.active{border-color:var(--g1);color:var(--g1);background:rgba(244,63,94,.1)}
+.pipeline-step.done{border-color:var(--green);color:var(--green);background:rgba(16,185,129,.1)}
+.pipeline-arrow{color:var(--t3);font-size:16px}
+.code-block{background:rgba(0,0,0,.4);border:1px solid var(--brd);border-radius:8px;padding:12px;font-family:'SF Mono','Fira Code',monospace;font-size:11px;overflow-x:auto;margin-top:12px;color:var(--t2)}
+.code-block .cmd{color:var(--g1)}
+.code-block .str{color:var(--green)}
+.code-block .num{color:var(--yellow)}
+</style>
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
+<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/rag-pipelines/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div>
+</div></nav>
+
+<div class="container">
+<div class="header">
+<h1>Interactive <span>RAG Pipeline</span> Demo</h1>
+<p>Explore semantic caching, vector search, and RAG patterns — all simulated in your browser.</p>
+</div>
+
+<div class="tabs">
+<button class="tab active" data-tab="faq">🤖 FAQ Bot</button>
+<button class="tab" data-tab="rag">📚 RAG Pipeline</button>
+<button class="tab" data-tab="cache">⚡ Semantic Cache</button>
+</div>
+
+<!-- FAQ BOT DEMO -->
+<div class="demo-section active" id="demo-faq">
+<div class="grid">
+<div>
+<div class="panel">
+<h3><span class="icon">❓</span> Sample FAQs</h3>
+<div class="faq-list" id="faqList"></div>
+<div class="config-slider">
+<label>Similarity Threshold <span class="val" id="thresholdVal">0.90</span></label>
+<input type="range" id="threshold" min="0.7" max="0.99" step="0.01" value="0.90">
+</div>
+<div class="input-group">
+<label>Ask a Question</label>
+<input type="text" id="faqQuestion" placeholder="How do I reset my password?">
+</div>
+<button class="btn btn-primary" id="askFaq">⚡ Search FAQ</button>
+</div>
+</div>
+<div>
+<div class="stats-row">
+<div class="stat hit"><div class="num" id="faqHits">0</div><div class="lbl">Cache Hits</div></div>
+<div class="stat miss"><div class="num" id="faqMisses">0</div><div class="lbl">Misses</div></div>
+<div class="stat"><div class="num" id="faqTotal">0</div><div class="lbl">Total</div></div>
+<div class="stat"><div class="num" id="faqRate">0%</div><div class="lbl">Hit Rate</div></div>
+</div>
+<div class="pipeline-viz">
+<div class="pipeline-step" id="faq-step-1">Question</div>
+<span class="pipeline-arrow">→</span>
+<div class="pipeline-step" id="faq-step-2">Embed</div>
+<span class="pipeline-arrow">→</span>
+<div class="pipeline-step" id="faq-step-3">KNN Search</div>
+<span class="pipeline-arrow">→</span>
+<div class="pipeline-step" id="faq-step-4">Match</div>
+</div>
+<div id="faqResult"></div>
+<div class="panel" style="margin-top:16px">
+<h3>Request Log</h3>
+<div class="log" id="faqLog"><div style="color:var(--t3);text-align:center;padding:20px">Ask a question to begin...</div></div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- RAG PIPELINE DEMO -->
+<div class="demo-section" id="demo-rag">
+<div class="grid">
+<div>
+<div class="panel">
+<h3><span class="icon">📄</span> Document Ingestion</h3>
+<div class="input-group">
+<label>Document Content</label>
+<textarea id="ragDoc" placeholder="Paste markdown or text content here...">## Valkey Vector Search
+
+Valkey supports HNSW and FLAT indexes for vector similarity search.
+
+### Creating an Index
+Use FT.CREATE to define your schema with vector fields.
+
+### Querying
+Use FT.SEARCH with KNN queries for nearest neighbor search.</textarea>
+</div>
+<button class="btn btn-secondary" id="ingestDoc" style="margin-bottom:12px">📥 Ingest Document</button>
+<div class="config-slider">
+<label>Chunk Size <span class="val" id="chunkVal">200</span></label>
+<input type="range" id="chunkSize" min="100" max="500" step="50" value="200">
+</div>
+</div>
+<div class="panel" style="margin-top:16px">
+<h3><span class="icon">🔍</span> Query</h3>
+<div class="input-group">
+<label>Question</label>
+<input type="text" id="ragQuery" placeholder="How do I create a vector index?">
+</div>
+<button class="btn btn-primary" id="queryRag">🔍 Query RAG</button>
+</div>
+</div>
+<div>
+<div class="stats-row">
+<div class="stat"><div class="num" id="ragChunks">0</div><div class="lbl">Chunks</div></div>
+<div class="stat hit"><div class="num" id="ragCacheHit">0</div><div class="lbl">Cache Hits</div></div>
+<div class="stat miss"><div class="num" id="ragCacheMiss">0</div><div class="lbl">Misses</div></div>
+<div class="stat"><div class="num" id="ragLatency">0ms</div><div class="lbl">Latency</div></div>
+</div>
+<div class="pipeline-viz">
+<div class="pipeline-step" id="rag-step-1">Query</div>
+<span class="pipeline-arrow">→</span>
+<div class="pipeline-step" id="rag-step-2">Cache Check</div>
+<span class="pipeline-arrow">→</span>
+<div class="pipeline-step" id="rag-step-3">Retrieve</div>
+<span class="pipeline-arrow">→</span>
+<div class="pipeline-step" id="rag-step-4">Generate</div>
+<span class="pipeline-arrow">→</span>
+<div class="pipeline-step" id="rag-step-5">Cache Store</div>
+</div>
+<div id="ragResult"></div>
+<div class="panel" style="margin-top:16px">
+<h3>Valkey Commands</h3>
+<div class="code-block" id="ragCommands"><span style="color:var(--t3)">// Commands will appear here...</span></div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- SEMANTIC CACHE DEMO -->
+<div class="demo-section" id="demo-cache">
+<div class="grid">
+<div>
+<div class="panel">
+<h3><span class="icon">⚡</span> Semantic Cache Simulator</h3>
+<div class="input-group">
+<label>Query</label>
+<input type="text" id="cacheQuery" placeholder="What is machine learning?">
+</div>
+<div class="config-slider">
+<label>Cache TTL (seconds) <span class="val" id="ttlVal">3600</span></label>
+<input type="range" id="cacheTtl" min="60" max="7200" step="60" value="3600">
+</div>
+<div class="config-slider">
+<label>Similarity Threshold <span class="val" id="cacheThreshVal">0.92</span></label>
+<input type="range" id="cacheThresh" min="0.8" max="0.99" step="0.01" value="0.92">
+</div>
+<button class="btn btn-primary" id="queryCache" style="margin-bottom:8px">⚡ Query with Cache</button>
+<button class="btn btn-secondary" id="clearCache">🗑️ Clear Cache</button>
+</div>
+</div>
+<div>
+<div class="stats-row">
+<div class="stat hit"><div class="num" id="cacheHits">0</div><div class="lbl">Hits</div></div>
+<div class="stat miss"><div class="num" id="cacheMisses">0</div><div class="lbl">Misses</div></div>
+<div class="stat"><div class="num" id="cacheEntries">0</div><div class="lbl">Entries</div></div>
+<div class="stat"><div class="num" id="cacheSavings">0ms</div><div class="lbl">Time Saved</div></div>
+</div>
+<div id="cacheResult"></div>
+<div class="panel" style="margin-top:16px">
+<h3>Cache Entries</h3>
+<div class="log" id="cacheLog"><div style="color:var(--t3);text-align:center;padding:20px">Cache is empty. Make a query to populate.</div></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+
+// Sample FAQ Data
+const faqs = [
+  { id: '1', q: 'How do I reset my password?', a: 'Click "Forgot Password" on the login page, enter your email, and follow the instructions sent to your inbox.', cat: 'account' },
+  { id: '2', q: 'What payment methods are accepted?', a: 'We accept Visa, MasterCard, American Express, PayPal, and bank transfers.', cat: 'billing' },
+  { id: '3', q: 'How do I cancel my subscription?', a: 'Go to Settings > Subscription > Cancel. Your access continues until the end of the billing period.', cat: 'billing' },
+  { id: '4', q: 'What is your refund policy?', a: 'We offer full refunds within 30 days of purchase. Contact support@example.com for assistance.', cat: 'billing' },
+  { id: '5', q: 'How do I contact customer support?', a: 'Email support@example.com, call 1-800-EXAMPLE, or use the live chat on our website.', cat: 'support' },
+  { id: '6', q: 'Where can I find my invoice?', a: 'Invoices are available in Settings > Billing > Invoice History. You can download PDFs from there.', cat: 'billing' },
+  { id: '7', q: 'How do I update my email address?', a: 'Go to Settings > Account > Email and enter your new email. Verify it by clicking the link sent to the new address.', cat: 'account' },
+  { id: '8', q: 'What browsers are supported?', a: 'We support Chrome, Firefox, Safari, and Edge (latest versions). Internet Explorer is not supported.', cat: 'technical' },
+];
+
+// Simple word-based similarity (simulates embeddings)
+function tokenize(text) {
+  return text.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+}
+
+function cosineSimilarity(a, b) {
+  const tokensA = tokenize(a);
+  const tokensB = tokenize(b);
+  const allTokens = [...new Set([...tokensA, ...tokensB])];
+  const vecA = allTokens.map(t => tokensA.filter(x => x === t).length);
+  const vecB = allTokens.map(t => tokensB.filter(x => x === t).length);
+  const dot = vecA.reduce((sum, v, i) => sum + v * vecB[i], 0);
+  const magA = Math.sqrt(vecA.reduce((sum, v) => sum + v * v, 0));
+  const magB = Math.sqrt(vecB.reduce((sum, v) => sum + v * v, 0));
+  return magA && magB ? dot / (magA * magB) : 0;
+}
+
+// Tab switching
+$$('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    $$('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    $$('.demo-section').forEach(s => s.classList.remove('active'));
+    $(`#demo-${tab.dataset.tab}`).classList.add('active');
+  });
+});
+
+// ============= FAQ BOT DEMO =============
+let faqHits = 0, faqMisses = 0, faqTotal = 0;
+
+function renderFaqList() {
+  const list = $('#faqList');
+  list.innerHTML = faqs.map(f => `
+    <div class="faq-item" data-q="${f.q}">
+      <div class="q">${f.q}</div>
+      <div class="a">${f.a}</div>
+    </div>
+  `).join('');
+  
+  $$('.faq-item').forEach(item => {
+    item.addEventListener('click', () => {
+      $('#faqQuestion').value = item.dataset.q;
+    });
+  });
+}
+
+function animatePipeline(prefix, steps, callback) {
+  steps.forEach((_, i) => {
+    $(`#${prefix}-step-${i+1}`).classList.remove('active', 'done');
+  });
+  let i = 0;
+  const interval = setInterval(() => {
+    if (i > 0) $(`#${prefix}-step-${i}`).classList.remove('active');
+    if (i > 0) $(`#${prefix}-step-${i}`).classList.add('done');
+    i++;
+    if (i <= steps.length) {
+      $(`#${prefix}-step-${i}`).classList.add('active');
+    } else {
+      clearInterval(interval);
+      callback && callback();
+    }
+  }, 200);
+}
+
+function searchFaq() {
+  const question = $('#faqQuestion').value.trim();
+  if (!question) return;
+  
+  const threshold = parseFloat($('#threshold').value);
+  faqTotal++;
+  
+  animatePipeline('faq', [1,2,3,4], () => {
+    let bestMatch = null;
+    let bestScore = 0;
+    
+    faqs.forEach(f => {
+      const score = cosineSimilarity(question, f.q);
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = f;
+      }
+    });
+    
+    const isHit = bestScore >= threshold;
+    if (isHit) faqHits++; else faqMisses++;
+    
+    updateFaqStats();
+    
+    const resultDiv = $('#faqResult');
+    if (isHit && bestMatch) {
+      resultDiv.innerHTML = `
+        <div class="result-card">
+          <h4>Answer <span class="badge hit">Cache Hit</span></h4>
+          <p>${bestMatch.a}</p>
+          <div class="similarity-bar">
+            <label><span>Similarity Score</span><span>${(bestScore * 100).toFixed(1)}%</span></label>
+            <div class="bar"><div class="fill" style="width:${bestScore * 100}%"></div></div>
+          </div>
+          <div class="meta">
+            <span>Matched: "${bestMatch.q}"</span>
+            <span>Category: ${bestMatch.cat}</span>
+          </div>
+        </div>
+      `;
+    } else {
+      resultDiv.innerHTML = `
+        <div class="result-card">
+          <h4>No Match Found <span class="badge miss">Cache Miss</span></h4>
+          <p>No FAQ matched with similarity ≥ ${(threshold * 100).toFixed(0)}%. Best match was ${(bestScore * 100).toFixed(1)}%.</p>
+          <div class="similarity-bar">
+            <label><span>Best Similarity</span><span>${(bestScore * 100).toFixed(1)}%</span></label>
+            <div class="bar"><div class="fill" style="width:${bestScore * 100}%"></div></div>
+          </div>
+        </div>
+      `;
+    }
+    
+    addFaqLog(question, isHit, bestScore);
+  });
+}
+
+function updateFaqStats() {
+  $('#faqHits').textContent = faqHits;
+  $('#faqMisses').textContent = faqMisses;
+  $('#faqTotal').textContent = faqTotal;
+  $('#faqRate').textContent = faqTotal ? `${((faqHits / faqTotal) * 100).toFixed(0)}%` : '0%';
+}
+
+function addFaqLog(q, isHit, score) {
+  const log = $('#faqLog');
+  if (faqTotal === 1) log.innerHTML = '';
+  const ts = new Date().toLocaleTimeString('en-US', {hour12:false});
+  const entry = document.createElement('div');
+  entry.className = `log-entry ${isHit ? 'hit' : 'miss'}`;
+  entry.innerHTML = `<span class="ts">${ts}</span> ${isHit ? '✅ HIT' : '⚠️ MISS'} — "${q.substring(0,30)}..." (${(score*100).toFixed(1)}%)`;
+  log.prepend(entry);
+}
+
+$('#threshold').addEventListener('input', e => {
+  $('#thresholdVal').textContent = parseFloat(e.target.value).toFixed(2);
+});
+
+$('#askFaq').addEventListener('click', searchFaq);
+$('#faqQuestion').addEventListener('keypress', e => { if (e.key === 'Enter') searchFaq(); });
+
+// ============= RAG PIPELINE DEMO =============
+let ragChunks = [], ragCache = {}, ragCacheHits = 0, ragCacheMisses = 0;
+
+function chunkDocument(text, chunkSize) {
+  const chunks = [];
+  const sections = text.split(/\n##/);
+  sections.forEach((section, i) => {
+    const title = i === 0 ? 'Introduction' : section.split('\n')[0].trim();
+    const content = i === 0 ? section : section.substring(title.length);
+    if (content.trim()) {
+      chunks.push({ id: `chunk_${chunks.length}`, section: title, content: content.trim().substring(0, chunkSize) });
+    }
+  });
+  return chunks;
+}
+
+function ingestDocument() {
+  const doc = $('#ragDoc').value;
+  const chunkSize = parseInt($('#chunkSize').value);
+  ragChunks = chunkDocument(doc, chunkSize);
+  $('#ragChunks').textContent = ragChunks.length;
+  
+  const cmds = `<span class="cmd">FT.CREATE</span> idx:docs ON HASH PREFIX 1 "doc:" SCHEMA
+  content TEXT section TEXT
+  embedding <span class="cmd">VECTOR HNSW</span> 6 TYPE FLOAT32 DIM <span class="num">1536</span> DISTANCE_METRIC COSINE
+
+<span style="color:var(--t3)">// Storing ${ragChunks.length} chunks...</span>
+${ragChunks.map(c => `<span class="cmd">HSET</span> doc:${c.id} content <span class="str">"${c.content.substring(0,40)}..."</span> section <span class="str">"${c.section}"</span>`).join('\n')}`;
+  
+  $('#ragCommands').innerHTML = cmds;
+}
+
+function queryRag() {
+  const query = $('#ragQuery').value.trim();
+  if (!query || ragChunks.length === 0) {
+    alert('Please ingest a document first!');
+    return;
+  }
+  
+  const startTime = performance.now();
+  
+  animatePipeline('rag', [1,2,3,4,5], () => {
+    // Check cache
+    let cacheHit = false;
+    let cachedAnswer = null;
+    
+    Object.keys(ragCache).forEach(k => {
+      if (cosineSimilarity(query, k) > 0.9) {
+        cacheHit = true;
+        cachedAnswer = ragCache[k];
+      }
+    });
+    
+    let latency, answer, sources;
+    
+    if (cacheHit) {
+      ragCacheHits++;
+      latency = 5 + Math.random() * 10;
+      answer = cachedAnswer;
+      sources = [];
+    } else {
+      ragCacheMisses++;
+      latency = 200 + Math.random() * 300;
+      
+      // Find relevant chunks
+      const scored = ragChunks.map(c => ({
+        ...c,
+        score: cosineSimilarity(query, c.content)
+      })).sort((a, b) => b.score - a.score).slice(0, 3);
+      
+      sources = scored;
+      answer = `Based on the documentation about "${scored[0]?.section || 'unknown'}": ${scored[0]?.content.substring(0, 200) || 'No relevant content found.'}...`;
+      
+      ragCache[query] = answer;
+    }
+    
+    $('#ragCacheHit').textContent = ragCacheHits;
+    $('#ragCacheMiss').textContent = ragCacheMisses;
+    $('#ragLatency').textContent = `${latency.toFixed(0)}ms`;
+    
+    const resultDiv = $('#ragResult');
+    resultDiv.innerHTML = `
+      <div class="result-card">
+        <h4>Answer <span class="badge ${cacheHit ? 'hit' : 'miss'}">${cacheHit ? 'Cache Hit' : 'Generated'}</span></h4>
+        <p>${answer}</p>
+        ${sources.length ? `<div class="meta" style="flex-direction:column;gap:4px;margin-top:12px">
+          <strong style="color:var(--t1)">Sources:</strong>
+          ${sources.map(s => `<span>• ${s.section} (${(s.score*100).toFixed(0)}% match)</span>`).join('')}
+        </div>` : '<div class="meta"><span>Retrieved from semantic cache</span></div>'}
+      </div>
+    `;
+    
+    const cmds = cacheHit ? 
+      `<span class="cmd">FT.SEARCH</span> idx:cache "*=>[KNN <span class="num">1</span> @embedding $vec AS score]"
+  PARAMS 2 vec <span class="str">[query_embedding]</span>
+  SORTBY score DIALECT 2
+
+<span style="color:var(--green)">// Cache HIT - returning cached response</span>` :
+      `<span class="cmd">FT.SEARCH</span> idx:docs "*=>[KNN <span class="num">3</span> @embedding $vec AS score]"
+  PARAMS 2 vec <span class="str">[query_embedding]</span>
+  SORTBY score RETURN 2 content section DIALECT 2
+
+<span style="color:var(--t3)">// Retrieved ${sources.length} chunks, generating response...</span>
+
+<span class="cmd">HSET</span> cache:${Date.now()} query <span class="str">"${query}"</span> response <span class="str">"${answer.substring(0,50)}..."</span>
+<span class="cmd">EXPIRE</span> cache:${Date.now()} <span class="num">3600</span>`;
+    
+    $('#ragCommands').innerHTML = cmds;
+  });
+}
+
+$('#chunkSize').addEventListener('input', e => {
+  $('#chunkVal').textContent = e.target.value;
+});
+
+$('#ingestDoc').addEventListener('click', ingestDocument);
+$('#queryRag').addEventListener('click', queryRag);
+$('#ragQuery').addEventListener('keypress', e => { if (e.key === 'Enter') queryRag(); });
+
+// ============= SEMANTIC CACHE DEMO =============
+let semanticCache = [], cacheHits = 0, cacheMisses = 0, timeSaved = 0;
+
+const mockResponses = {
+  'machine learning': 'Machine learning is a subset of AI that enables systems to learn from data.',
+  'neural network': 'A neural network is a computing system inspired by biological neural networks.',
+  'deep learning': 'Deep learning uses multi-layered neural networks to model complex patterns.',
+  'valkey': 'Valkey is a high-performance key-value store with vector search capabilities.',
+  'vector search': 'Vector search finds similar items using mathematical distance metrics.',
+};
+
+function querySemanticCache() {
+  const query = $('#cacheQuery').value.trim();
+  if (!query) return;
+  
+  const threshold = parseFloat($('#cacheThresh').value);
+  const ttl = parseInt($('#cacheTtl').value);
+  
+  let hit = false;
+  let matchedEntry = null;
+  let matchScore = 0;
+  
+  semanticCache.forEach(entry => {
+    const score = cosineSimilarity(query, entry.query);
+    if (score >= threshold && score > matchScore) {
+      hit = true;
+      matchedEntry = entry;
+      matchScore = score;
+    }
+  });
+  
+  let response, latency;
+  
+  if (hit) {
+    cacheHits++;
+    latency = 2 + Math.random() * 8;
+    timeSaved += 500;
+    response = matchedEntry.response;
+  } else {
+    cacheMisses++;
+    latency = 400 + Math.random() * 600;
+    
+    // Generate mock response
+    let bestKey = Object.keys(mockResponses).find(k => query.toLowerCase().includes(k));
+    response = bestKey ? mockResponses[bestKey] : `This is a generated response for: "${query}"`;
+    
+    semanticCache.push({ query, response, timestamp: Date.now(), ttl });
+  }
+  
+  $('#cacheHits').textContent = cacheHits;
+  $('#cacheMisses').textContent = cacheMisses;
+  $('#cacheEntries').textContent = semanticCache.length;
+  $('#cacheSavings').textContent = `${timeSaved}ms`;
+  
+  const resultDiv = $('#cacheResult');
+  resultDiv.innerHTML = `
+    <div class="result-card">
+      <h4>Response <span class="badge ${hit ? 'hit' : 'miss'}">${hit ? 'Cache Hit' : 'Cache Miss'}</span></h4>
+      <p>${response}</p>
+      <div class="meta">
+        <span>Latency: ${latency.toFixed(0)}ms</span>
+        ${hit ? `<span>Similarity: ${(matchScore * 100).toFixed(1)}%</span>` : '<span>Stored in cache</span>'}
+      </div>
+    </div>
+  `;
+  
+  renderCacheLog();
+}
+
+function renderCacheLog() {
+  const log = $('#cacheLog');
+  if (semanticCache.length === 0) {
+    log.innerHTML = '<div style="color:var(--t3);text-align:center;padding:20px">Cache is empty</div>';
+    return;
+  }
+  log.innerHTML = semanticCache.map(e => `
+    <div class="log-entry info">
+      <span class="ts">${new Date(e.timestamp).toLocaleTimeString('en-US', {hour12:false})}</span>
+      "${e.query.substring(0, 40)}..." → TTL: ${e.ttl}s
+    </div>
+  `).reverse().join('');
+}
+
+function clearSemanticCache() {
+  semanticCache = [];
+  cacheHits = cacheMisses = timeSaved = 0;
+  $('#cacheHits').textContent = '0';
+  $('#cacheMisses').textContent = '0';
+  $('#cacheEntries').textContent = '0';
+  $('#cacheSavings').textContent = '0ms';
+  $('#cacheResult').innerHTML = '';
+  renderCacheLog();
+}
+
+$('#cacheTtl').addEventListener('input', e => {
+  $('#ttlVal').textContent = e.target.value;
+});
+
+$('#cacheThresh').addEventListener('input', e => {
+  $('#cacheThreshVal').textContent = parseFloat(e.target.value).toFixed(2);
+});
+
+$('#queryCache').addEventListener('click', querySemanticCache);
+$('#clearCache').addEventListener('click', clearSemanticCache);
+$('#cacheQuery').addEventListener('keypress', e => { if (e.key === 'Enter') querySemanticCache(); });
+
+// Initialize
+renderFaqList();
+</script>
+</body>
+</html>

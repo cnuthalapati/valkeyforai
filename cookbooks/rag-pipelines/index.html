@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG Pipeline Cookbooks — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+<style>
+:root{--accent:#f43f5e;--accent2:#e11d48}
+.cookbook-list{display:flex;flex-direction:column;gap:16px;margin:32px 0}
+.cookbook-item{display:flex;align-items:flex-start;gap:16px;padding:24px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;text-decoration:none;transition:.2s}
+.cookbook-item:hover{border-color:#f43f5e;transform:translateX(4px)}
+.cookbook-num{width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#f43f5e,#e11d48);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:#fff;flex-shrink:0}
+.cookbook-content h3{font-size:18px;font-weight:700;color:#f5f5f7;margin-bottom:6px}
+.cookbook-content p{font-size:13px;color:rgba(245,245,247,.6);line-height:1.5;margin-bottom:8px}
+.cookbook-tags{display:flex;gap:6px;flex-wrap:wrap}
+.cookbook-tag{padding:3px 10px;border-radius:100px;font-size:10px;font-weight:600;background:rgba(244,63,94,.1);color:#f43f5e}
+</style>
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent" style="color:#f43f5e">for ai</span></a>
+<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/use-cases/rag-pipelines/">RAG Pipelines</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div>
+</div></nav>
+
+<div style="max-width:800px;margin:0 auto;padding:48px 24px">
+<div style="margin-bottom:32px">
+<a href="/use-cases/rag-pipelines/" style="color:#f43f5e;font-size:13px;text-decoration:none">← Back to RAG Pipelines</a>
+</div>
+
+<h1 style="font-size:40px;font-weight:900;letter-spacing:-.03em;margin-bottom:12px">RAG Pipeline <span style="background:linear-gradient(135deg,#f43f5e,#e11d48);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Cookbooks</span></h1>
+<p style="font-size:16px;color:rgba(245,245,247,.6);margin-bottom:40px;line-height:1.6">Step-by-step guides for building production-ready RAG systems with Valkey. From setup to scaling.</p>
+
+<div class="cookbook-list">
+<a href="01-getting-started.html" class="cookbook-item">
+<div class="cookbook-num">01</div>
+<div class="cookbook-content">
+<h3>Getting Started with RAG Cache</h3>
+<p>Set up Valkey, create your first vector index, store embeddings, and run your first semantic search query.</p>
+<div class="cookbook-tags"><span class="cookbook-tag">Setup</span><span class="cookbook-tag">Docker</span><span class="cookbook-tag">FT.CREATE</span></div>
+</div>
+</a>
+
+<a href="02-semantic-caching.html" class="cookbook-item">
+<div class="cookbook-num">02</div>
+<div class="cookbook-content">
+<h3>Semantic Caching Patterns</h3>
+<p>Cache LLM responses by semantic similarity. Tune similarity thresholds, implement TTL strategies, measure hit rates.</p>
+<div class="cookbook-tags"><span class="cookbook-tag">Caching</span><span class="cookbook-tag">Similarity</span><span class="cookbook-tag">TTL</span></div>
+</div>
+</a>
+
+<a href="03-vector-search.html" class="cookbook-item">
+<div class="cookbook-num">03</div>
+<div class="cookbook-content">
+<h3>Vector Search Deep Dive</h3>
+<p>HNSW vs FLAT indexes, hybrid search combining vectors with keywords, metadata filtering, performance tuning.</p>
+<div class="cookbook-tags"><span class="cookbook-tag">HNSW</span><span class="cookbook-tag">Hybrid Search</span><span class="cookbook-tag">Filters</span></div>
+</div>
+</a>
+
+<a href="04-cache-invalidation.html" class="cookbook-item">
+<div class="cookbook-num">04</div>
+<div class="cookbook-content">
+<h3>Cache Invalidation Strategies</h3>
+<p>TTL-based expiration, event-driven invalidation, version tagging, and patterns for keeping cache fresh.</p>
+<div class="cookbook-tags"><span class="cookbook-tag">Invalidation</span><span class="cookbook-tag">Events</span><span class="cookbook-tag">Versioning</span></div>
+</div>
+</a>
+
+<a href="05-scaling-production.html" class="cookbook-item">
+<div class="cookbook-num">05</div>
+<div class="cookbook-content">
+<h3>Scaling for Production</h3>
+<p>Cluster mode, replication, memory optimization, handling millions of vectors, load balancing strategies.</p>
+<div class="cookbook-tags"><span class="cookbook-tag">Clustering</span><span class="cookbook-tag">Replication</span><span class="cookbook-tag">Scale</span></div>
+</div>
+</a>
+
+<a href="06-monitoring.html" class="cookbook-item">
+<div class="cookbook-num">06</div>
+<div class="cookbook-content">
+<h3>Monitoring & Observability</h3>
+<p>Track cache hit rates, search latencies, memory usage. Set up alerts, dashboards, and performance baselines.</p>
+<div class="cookbook-tags"><span class="cookbook-tag">Metrics</span><span class="cookbook-tag">Logging</span><span class="cookbook-tag">Alerts</span></div>
+</div>
+</a>
+</div>
+
+<div style="margin-top:48px;padding:32px;background:linear-gradient(135deg,rgba(244,63,94,.1),rgba(139,92,246,.1));border:1px solid rgba(244,63,94,.2);border-radius:16px;text-align:center">
+<h3 style="font-size:20px;font-weight:800;margin-bottom:12px">🚀 Try the Interactive Demo</h3>
+<p style="font-size:14px;color:rgba(245,245,247,.6);margin-bottom:20px">See these concepts in action with our browser-based RAG simulator.</p>
+<a href="/demo/rag-pipeline.html" style="display:inline-block;padding:12px 24px;background:linear-gradient(135deg,#f43f5e,#e11d48);color:#fff;border-radius:8px;font-weight:600;font-size:14px;text-decoration:none">Launch Demo →</a>
+</div>
+</div>
+</body>
+</html>

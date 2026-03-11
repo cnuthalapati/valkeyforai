@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cache Invalidation Strategies — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+<style>
+:root{--accent:#f43f5e}
+.code-block{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:20px;margin:16px 0;font-family:'SF Mono','Fira Code',monospace;font-size:13px;line-height:1.7;overflow-x:auto}
+.code-block .cmd{color:#f43f5e}
+.code-block .str{color:#10b981}
+.code-block .num{color:#f59e0b}
+.code-block .comment{color:rgba(245,245,247,.4)}
+.code-block .kw{color:#8b5cf6}
+.section{margin:40px 0}
+.section h2{font-size:24px;font-weight:800;margin-bottom:16px}
+.section p{color:rgba(245,245,247,.7);line-height:1.7;margin-bottom:16px}
+.pattern-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px;margin:16px 0}
+.pattern-card h4{font-size:16px;font-weight:700;margin-bottom:8px;color:#f5f5f7}
+.pattern-card p{color:rgba(245,245,247,.6);font-size:13px;margin-bottom:12px}
+.nav-footer{display:flex;justify-content:space-between;margin-top:48px;padding-top:24px;border-top:1px solid rgba(255,255,255,.08)}
+.nav-footer a{color:#f43f5e;text-decoration:none;font-weight:600;font-size:14px}
+</style>
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent" style="color:#f43f5e">for ai</span></a>
+<div class="nav-links"><a href="/cookbooks/rag-pipelines/">All Cookbooks</a><a href="/demo/rag-pipeline.html">Demo</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div>
+</div></nav>
+
+<div style="max-width:800px;margin:0 auto;padding:48px 24px">
+<a href="/cookbooks/rag-pipelines/" style="color:#f43f5e;font-size:13px;text-decoration:none">← All RAG Cookbooks</a>
+
+<h1 style="font-size:36px;font-weight:900;margin:24px 0 12px">Cache <span style="background:linear-gradient(135deg,#f43f5e,#e11d48);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Invalidation</span></h1>
+<p style="color:rgba(245,245,247,.6);font-size:16px;margin-bottom:32px">Keep your cache fresh with TTL, event-driven invalidation, and versioning strategies.</p>
+
+<div class="section">
+<h2>Strategy 1: TTL-Based Expiration</h2>
+<p>The simplest approach — let entries expire automatically:</p>
+<div class="code-block">
+<span class="comment"># Set TTL when storing</span>
+<span class="cmd">HSET</span> cache:query_abc123 query <span class="str">"..."</span> response <span class="str">"..."</span>
+<span class="cmd">EXPIRE</span> cache:query_abc123 <span class="num">3600</span>  <span class="comment"># 1 hour</span>
+
+<span class="comment"># Or use SETEX for atomic set + expire</span>
+<span class="kw">def</span> cache_with_ttl(key, data, ttl=<span class="num">3600</span>):
+    client.hset(key, mapping=data)
+    client.expire(key, ttl)
+</div>
+
+<div class="pattern-card">
+<h4>Recommended TTLs by Content Type</h4>
+<p><strong>Static facts:</strong> 24 hours | <strong>Documentation:</strong> 6 hours | <strong>User data:</strong> 1 hour | <strong>Real-time:</strong> 1-5 minutes</p>
+</div>
+</div>
+
+<div class="section">
+<h2>Strategy 2: Version Tagging</h2>
+<p>Include version numbers in cache keys to invalidate all at once:</p>
+<div class="code-block">
+<span class="comment"># Store current version</span>
+<span class="cmd">SET</span> cache:version <span class="num">42</span>
+
+<span class="comment"># Include version in cache keys</span>
+<span class="kw">def</span> get_cache_key(query):
+    version = client.get(<span class="str">"cache:version"</span>)
+    query_hash = hashlib.sha256(query.encode()).hexdigest()[:<span class="num">16</span>]
+    <span class="kw">return</span> f<span class="str">"cache:v{version}:{query_hash}"</span>
+
+<span class="comment"># Invalidate ALL cache by bumping version</span>
+<span class="kw">def</span> invalidate_all():
+    client.incr(<span class="str">"cache:version"</span>)
+    <span class="comment"># Old keys will miss and eventually expire</span>
+</div>
+</div>
+
+<div class="section">
+<h2>Strategy 3: Event-Driven Invalidation</h2>
+<p>Invalidate cache when source documents change:</p>
+<div class="code-block">
+<span class="comment"># Track which cache entries depend on which documents</span>
+<span class="kw">def</span> cache_response(query, response, source_docs):
+    cache_key = get_cache_key(query)
+    client.hset(cache_key, mapping={
+        <span class="str">"query"</span>: query,
+        <span class="str">"response"</span>: response,
+        <span class="str">"sources"</span>: json.dumps(source_docs)
+    })
+    
+    <span class="comment"># Track dependency: doc -> cache entries</span>
+    <span class="kw">for</span> doc_id <span class="kw">in</span> source_docs:
+        client.sadd(f<span class="str">"doc_deps:{doc_id}"</span>, cache_key)
+
+<span class="comment"># When a document is updated</span>
+<span class="kw">def</span> on_document_update(doc_id):
+    <span class="comment"># Get all cache entries that depend on this doc</span>
+    cache_keys = client.smembers(f<span class="str">"doc_deps:{doc_id}"</span>)
+    
+    <span class="comment"># Delete them</span>
+    <span class="kw">if</span> cache_keys:
+        client.delete(*cache_keys)
+    
+    <span class="comment"># Clean up dependency tracking</span>
+    client.delete(f<span class="str">"doc_deps:{doc_id}"</span>)
+</div>
+</div>
+
+<div class="section">
+<h2>Strategy 4: Namespace-Based Invalidation</h2>
+<p>Organize cache by namespace for bulk invalidation:</p>
+<div class="code-block">
+<span class="comment"># Use namespaced prefixes</span>
+cache:docs:technical:...
+cache:docs:support:...
+cache:faqs:billing:...
+
+<span class="comment"># Invalidate an entire namespace</span>
+<span class="kw">def</span> invalidate_namespace(namespace):
+    pattern = f<span class="str">"cache:{namespace}:*"</span>
+    cursor = <span class="num">0</span>
+    <span class="kw">while</span> <span class="kw">True</span>:
+        cursor, keys = client.scan(cursor, match=pattern, count=<span class="num">100</span>)
+        <span class="kw">if</span> keys:
+            client.delete(*keys)
+        <span class="kw">if</span> cursor == <span class="num">0</span>:
+            <span class="kw">break</span>
+</div>
+</div>
+
+<div class="section">
+<h2>Strategy 5: LRU with MAXMEMORY</h2>
+<p>Let Valkey automatically evict least-recently-used entries:</p>
+<div class="code-block">
+<span class="comment"># valkey.conf</span>
+maxmemory 2gb
+maxmemory-policy allkeys-lru
+
+<span class="comment"># Or volatile-lru to only evict keys with TTL set</span>
+maxmemory-policy volatile-lru
+</div>
+</div>
+
+<div class="section">
+<h2>Combined Approach</h2>
+<div class="code-block">
+<span class="kw">class</span> SmartCache:
+    <span class="kw">def</span> __init__(self, default_ttl=<span class="num">3600</span>):
+        self.client = valkey.Valkey()
+        self.default_ttl = default_ttl
+    
+    <span class="kw">def</span> set(self, query, response, sources=<span class="kw">None</span>, ttl=<span class="kw">None</span>):
+        version = self.client.get(<span class="str">"cache:version"</span>) <span class="kw">or</span> <span class="str">"1"</span>
+        key = f<span class="str">"cache:v{version}:{hash(query)}"</span>
+        
+        self.client.hset(key, mapping={
+            <span class="str">"response"</span>: response,
+            <span class="str">"sources"</span>: json.dumps(sources <span class="kw">or</span> [])
+        })
+        self.client.expire(key, ttl <span class="kw">or</span> self.default_ttl)
+        
+        <span class="comment"># Track dependencies</span>
+        <span class="kw">for</span> src <span class="kw">in</span> (sources <span class="kw">or</span> []):
+            self.client.sadd(f<span class="str">"deps:{src}"</span>, key)
+    
+    <span class="kw">def</span> invalidate_source(self, source_id):
+        keys = self.client.smembers(f<span class="str">"deps:{source_id}"</span>)
+        <span class="kw">if</span> keys:
+            self.client.delete(*keys)
+        self.client.delete(f<span class="str">"deps:{source_id}"</span>)
+    
+    <span class="kw">def</span> invalidate_all(self):
+        self.client.incr(<span class="str">"cache:version"</span>)
+</div>
+</div>
+
+<div class="nav-footer">
+<a href="03-vector-search.html">← Vector Search</a>
+<a href="05-scaling-production.html">Next: Scaling →</a>
+</div>
+</div>
+</body>
+</html>

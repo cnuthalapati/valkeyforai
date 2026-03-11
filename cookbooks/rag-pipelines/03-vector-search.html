@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vector Search Deep Dive — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+<style>
+:root{--accent:#f43f5e}
+.code-block{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:20px;margin:16px 0;font-family:'SF Mono','Fira Code',monospace;font-size:13px;line-height:1.7;overflow-x:auto}
+.code-block .cmd{color:#f43f5e}
+.code-block .str{color:#10b981}
+.code-block .num{color:#f59e0b}
+.code-block .comment{color:rgba(245,245,247,.4)}
+.code-block .kw{color:#8b5cf6}
+.section{margin:40px 0}
+.section h2{font-size:24px;font-weight:800;margin-bottom:16px}
+.section p{color:rgba(245,245,247,.7);line-height:1.7;margin-bottom:16px}
+.comparison{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:20px 0}
+.comparison-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px}
+.comparison-card h4{font-size:16px;font-weight:700;margin-bottom:12px;color:#f5f5f7}
+.comparison-card ul{margin-left:16px;color:rgba(245,245,247,.7);line-height:1.8}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px}
+th,td{padding:12px 16px;text-align:left;border-bottom:1px solid rgba(255,255,255,.08)}
+th{color:rgba(245,245,247,.5);font-weight:600;font-size:11px;text-transform:uppercase}
+td{color:rgba(245,245,247,.8)}
+.nav-footer{display:flex;justify-content:space-between;margin-top:48px;padding-top:24px;border-top:1px solid rgba(255,255,255,.08)}
+.nav-footer a{color:#f43f5e;text-decoration:none;font-weight:600;font-size:14px}
+</style>
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent" style="color:#f43f5e">for ai</span></a>
+<div class="nav-links"><a href="/cookbooks/rag-pipelines/">All Cookbooks</a><a href="/demo/rag-pipeline.html">Demo</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div>
+</div></nav>
+
+<div style="max-width:800px;margin:0 auto;padding:48px 24px">
+<a href="/cookbooks/rag-pipelines/" style="color:#f43f5e;font-size:13px;text-decoration:none">← All RAG Cookbooks</a>
+
+<h1 style="font-size:36px;font-weight:900;margin:24px 0 12px">Vector Search <span style="background:linear-gradient(135deg,#f43f5e,#e11d48);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Deep Dive</span></h1>
+<p style="color:rgba(245,245,247,.6);font-size:16px;margin-bottom:32px">HNSW vs FLAT indexes, hybrid search, metadata filtering, and performance optimization.</p>
+
+<div class="section">
+<h2>HNSW vs FLAT Indexes</h2>
+<div class="comparison">
+<div class="comparison-card">
+<h4>HNSW (Approximate)</h4>
+<ul>
+<li>~0.5ms search latency</li>
+<li>95%+ recall accuracy</li>
+<li>Best for large datasets (>10K vectors)</li>
+<li>Higher memory overhead</li>
+</ul>
+</div>
+<div class="comparison-card">
+<h4>FLAT (Exact)</h4>
+<ul>
+<li>Linear scan - O(n) complexity</li>
+<li>100% accuracy guaranteed</li>
+<li>Best for small datasets (<10K vectors)</li>
+<li>Lower memory overhead</li>
+</ul>
+</div>
+</div>
+
+<div class="code-block">
+<span class="comment"># HNSW Index (recommended for production)</span>
+<span class="cmd">FT.CREATE</span> idx:hnsw ON HASH PREFIX <span class="num">1</span> <span class="str">"doc:"</span>
+  SCHEMA embedding <span class="kw">VECTOR HNSW</span> <span class="num">6</span>
+    TYPE FLOAT32 DIM <span class="num">1536</span> DISTANCE_METRIC COSINE
+    M <span class="num">16</span>              <span class="comment"># Max connections per node</span>
+    EF_CONSTRUCTION <span class="num">200</span>  <span class="comment"># Build-time accuracy</span>
+
+<span class="comment"># FLAT Index (for small datasets or exact search)</span>
+<span class="cmd">FT.CREATE</span> idx:flat ON HASH PREFIX <span class="num">1</span> <span class="str">"doc:"</span>
+  SCHEMA embedding <span class="kw">VECTOR FLAT</span> <span class="num">6</span>
+    TYPE FLOAT32 DIM <span class="num">1536</span> DISTANCE_METRIC COSINE
+</div>
+</div>
+
+<div class="section">
+<h2>HNSW Parameters</h2>
+<table>
+<tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+<tr><td><strong>M</strong></td><td>16</td><td>Max connections per node. Higher = better recall, more memory</td></tr>
+<tr><td><strong>EF_CONSTRUCTION</strong></td><td>200</td><td>Build quality. Higher = slower build, better recall</td></tr>
+<tr><td><strong>EF_RUNTIME</strong></td><td>10</td><td>Search quality. Set at query time</td></tr>
+</table>
+</div>
+
+<div class="section">
+<h2>Hybrid Search: Vectors + Keywords</h2>
+<p>Combine vector similarity with keyword matching for more precise results:</p>
+<div class="code-block">
+<span class="comment"># Create index with text and vector fields</span>
+<span class="cmd">FT.CREATE</span> idx:hybrid ON HASH PREFIX <span class="num">1</span> <span class="str">"doc:"</span>
+  SCHEMA
+    content <span class="kw">TEXT</span>
+    category <span class="kw">TAG</span>
+    embedding <span class="kw">VECTOR HNSW</span> <span class="num">6</span> TYPE FLOAT32 DIM <span class="num">1536</span> DISTANCE_METRIC COSINE
+
+<span class="comment"># Hybrid query: vector search + category filter</span>
+<span class="cmd">FT.SEARCH</span> idx:hybrid
+  <span class="str">"(@category:{technical})=>[KNN 5 @embedding $vec AS score]"</span>
+  PARAMS <span class="num">2</span> vec [embedding_bytes]
+  SORTBY score
+  DIALECT <span class="num">2</span>
+
+<span class="comment"># Hybrid query: vector search + keyword filter</span>
+<span class="cmd">FT.SEARCH</span> idx:hybrid
+  <span class="str">"(@content:python programming)=>[KNN 5 @embedding $vec AS score]"</span>
+  PARAMS <span class="num">2</span> vec [embedding_bytes]
+  DIALECT <span class="num">2</span>
+</div>
+</div>
+
+<div class="section">
+<h2>Metadata Filtering</h2>
+<div class="code-block">
+<span class="comment"># Index with multiple filter fields</span>
+<span class="cmd">FT.CREATE</span> idx:docs ON HASH PREFIX <span class="num">1</span> <span class="str">"doc:"</span>
+  SCHEMA
+    content <span class="kw">TEXT</span>
+    category <span class="kw">TAG</span>
+    author <span class="kw">TAG</span>
+    date <span class="kw">NUMERIC</span>
+    embedding <span class="kw">VECTOR HNSW</span> <span class="num">6</span> TYPE FLOAT32 DIM <span class="num">1536</span> DISTANCE_METRIC COSINE
+
+<span class="comment"># Filter by category</span>
+<span class="cmd">FT.SEARCH</span> idx:docs <span class="str">"(@category:{billing})=>[KNN 5 @embedding $vec AS score]"</span> ...
+
+<span class="comment"># Filter by date range</span>
+<span class="cmd">FT.SEARCH</span> idx:docs <span class="str">"(@date:[1704067200 1706745600])=>[KNN 5 @embedding $vec AS score]"</span> ...
+
+<span class="comment"># Multiple filters</span>
+<span class="cmd">FT.SEARCH</span> idx:docs <span class="str">"(@category:{support} @author:{john})=>[KNN 5 @embedding $vec AS score]"</span> ...
+</div>
+</div>
+
+<div class="section">
+<h2>Python Implementation</h2>
+<div class="code-block">
+<span class="kw">from</span> valkey.commands.search.query <span class="kw">import</span> Query
+
+<span class="kw">def</span> hybrid_search(query_text, category=<span class="kw">None</span>, date_range=<span class="kw">None</span>, k=<span class="num">5</span>):
+    <span class="comment"># Build filter</span>
+    filters = []
+    <span class="kw">if</span> category:
+        filters.append(f<span class="str">"@category:{{{category}}}"</span>)
+    <span class="kw">if</span> date_range:
+        filters.append(f<span class="str">"@date:[{date_range[0]} {date_range[1]}]"</span>)
+    
+    filter_str = <span class="str">" "</span>.join(filters) <span class="kw">if</span> filters <span class="kw">else</span> <span class="str">"*"</span>
+    
+    <span class="comment"># Build query</span>
+    query_embedding = get_embedding(query_text)
+    query_bytes = np.array(query_embedding, dtype=np.float32).tobytes()
+    
+    q = Query(f<span class="str">"({filter_str})=>[KNN {k} @embedding $vec AS score]"</span>)
+    q.sort_by(<span class="str">"score"</span>)
+    q.return_fields(<span class="str">"content"</span>, <span class="str">"category"</span>, <span class="str">"score"</span>)
+    q.dialect(<span class="num">2</span>)
+    
+    <span class="kw">return</span> client.ft(<span class="str">"idx:docs"</span>).search(q, {<span class="str">"vec"</span>: query_bytes})
+</div>
+</div>
+
+<div class="nav-footer">
+<a href="02-semantic-caching.html">← Semantic Caching</a>
+<a href="04-cache-invalidation.html">Next: Cache Invalidation →</a>
+</div>
+</div>
+</body>
+</html>

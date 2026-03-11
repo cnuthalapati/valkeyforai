@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Semantic Caching Patterns — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+<style>
+:root{--accent:#f43f5e}
+.code-block{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:20px;margin:16px 0;font-family:'SF Mono','Fira Code',monospace;font-size:13px;line-height:1.7;overflow-x:auto}
+.code-block .cmd{color:#f43f5e}
+.code-block .str{color:#10b981}
+.code-block .num{color:#f59e0b}
+.code-block .comment{color:rgba(245,245,247,.4)}
+.code-block .kw{color:#8b5cf6}
+.section{margin:40px 0}
+.section h2{font-size:24px;font-weight:800;margin-bottom:16px}
+.section p{color:rgba(245,245,247,.7);line-height:1.7;margin-bottom:16px}
+.tip{padding:16px 20px;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.2);border-radius:10px;margin:16px 0}
+.tip strong{color:#3b82f6}
+.warning{padding:16px 20px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.2);border-radius:10px;margin:16px 0}
+.warning strong{color:#f59e0b}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px}
+th,td{padding:12px 16px;text-align:left;border-bottom:1px solid rgba(255,255,255,.08)}
+th{color:rgba(245,245,247,.5);font-weight:600;font-size:11px;text-transform:uppercase}
+td{color:rgba(245,245,247,.8)}
+.nav-footer{display:flex;justify-content:space-between;margin-top:48px;padding-top:24px;border-top:1px solid rgba(255,255,255,.08)}
+.nav-footer a{color:#f43f5e;text-decoration:none;font-weight:600;font-size:14px}
+</style>
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent" style="color:#f43f5e">for ai</span></a>
+<div class="nav-links"><a href="/cookbooks/rag-pipelines/">All Cookbooks</a><a href="/demo/rag-pipeline.html">Demo</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div>
+</div></nav>
+
+<div style="max-width:800px;margin:0 auto;padding:48px 24px">
+<a href="/cookbooks/rag-pipelines/" style="color:#f43f5e;font-size:13px;text-decoration:none">← All RAG Cookbooks</a>
+
+<h1 style="font-size:36px;font-weight:900;margin:24px 0 12px">Semantic <span style="background:linear-gradient(135deg,#f43f5e,#e11d48);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Caching</span> Patterns</h1>
+<p style="color:rgba(245,245,247,.6);font-size:16px;margin-bottom:32px">Cache LLM responses by semantic similarity — not just exact matches. Save costs and reduce latency.</p>
+
+<div class="section">
+<h2>Why Semantic Caching?</h2>
+<p>Traditional caching requires exact query matches. But users ask the same question in different ways:</p>
+<ul style="color:rgba(245,245,247,.7);margin-left:20px;line-height:1.8">
+<li>"How do I reset my password?"</li>
+<li>"I forgot my password, help"</li>
+<li>"Password reset instructions"</li>
+</ul>
+<p>Semantic caching matches by meaning, so all three queries hit the same cached response.</p>
+</div>
+
+<div class="section">
+<h2>Create a Cache Index</h2>
+<div class="code-block">
+<span class="cmd">FT.CREATE</span> idx:llm_cache
+  ON HASH
+  PREFIX <span class="num">1</span> <span class="str">"cache:"</span>
+  SCHEMA
+    query <span class="kw">TEXT</span>
+    response <span class="kw">TEXT</span>
+    embedding <span class="kw">VECTOR HNSW</span> <span class="num">6</span>
+      TYPE FLOAT32
+      DIM <span class="num">1536</span>
+      DISTANCE_METRIC COSINE
+</div>
+</div>
+
+<div class="section">
+<h2>Cache Lookup Pattern</h2>
+<div class="code-block">
+<span class="kw">async def</span> semantic_cache_lookup(query: str, threshold: float = <span class="num">0.92</span>):
+    <span class="comment"># Embed the query</span>
+    query_embedding = <span class="kw">await</span> get_embedding(query)
+    query_bytes = np.array(query_embedding, dtype=np.float32).tobytes()
+    
+    <span class="comment"># Search for similar cached queries</span>
+    results = client.execute_command(
+        <span class="str">'FT.SEARCH'</span>, <span class="str">'idx:llm_cache'</span>,
+        <span class="str">'*=>[KNN 1 @embedding $vec AS score]'</span>,
+        <span class="str">'PARAMS'</span>, <span class="str">'2'</span>, <span class="str">'vec'</span>, query_bytes,
+        <span class="str">'SORTBY'</span>, <span class="str">'score'</span>,
+        <span class="str">'RETURN'</span>, <span class="str">'2'</span>, <span class="str">'response'</span>, <span class="str">'score'</span>,
+        <span class="str">'DIALECT'</span>, <span class="str">'2'</span>
+    )
+    
+    <span class="kw">if</span> results[<span class="num">0</span>] > <span class="num">0</span>:
+        similarity = <span class="num">1</span> - float(results[<span class="num">2</span>][<span class="num">3</span>])  <span class="comment"># Convert distance to similarity</span>
+        <span class="kw">if</span> similarity >= threshold:
+            <span class="kw">return</span> results[<span class="num">2</span>][<span class="num">1</span>]  <span class="comment"># Return cached response</span>
+    
+    <span class="kw">return</span> <span class="kw">None</span>  <span class="comment"># Cache miss</span>
+</div>
+</div>
+
+<div class="section">
+<h2>Similarity Threshold Tuning</h2>
+<p>The threshold determines how similar queries must be to trigger a cache hit:</p>
+
+<table>
+<tr><th>Threshold</th><th>Behavior</th><th>Use Case</th></tr>
+<tr><td><strong>0.95+</strong></td><td>Very strict — near-identical queries only</td><td>Legal, medical, compliance</td></tr>
+<tr><td><strong>0.90-0.95</strong></td><td>Balanced — captures paraphrases</td><td>General Q&A, support bots</td></tr>
+<tr><td><strong>0.85-0.90</strong></td><td>Loose — similar topics match</td><td>Conversational AI, brainstorming</td></tr>
+<tr><td><strong>&lt;0.85</strong></td><td>Very loose — may return unrelated answers</td><td>Not recommended</td></tr>
+</table>
+
+<div class="tip">
+<strong>💡 Tip:</strong> Start with 0.92 and adjust based on your cache hit rate and answer quality. Monitor false positives closely.
+</div>
+</div>
+
+<div class="section">
+<h2>TTL Strategies</h2>
+<p>Different content needs different cache lifetimes:</p>
+<div class="code-block">
+<span class="comment"># Store with TTL</span>
+<span class="kw">def</span> cache_response(query, response, ttl_seconds=<span class="num">3600</span>):
+    key = f<span class="str">"cache:{hash(query)[:16]}"</span>
+    embedding = get_embedding(query)
+    
+    client.hset(key, mapping={
+        <span class="str">"query"</span>: query,
+        <span class="str">"response"</span>: response,
+        <span class="str">"embedding"</span>: np.array(embedding, dtype=np.float32).tobytes()
+    })
+    client.expire(key, ttl_seconds)
+
+<span class="comment"># Different TTLs by content type</span>
+TTL_CONFIG = {
+    <span class="str">"factual"</span>: <span class="num">86400</span>,     <span class="comment"># 24 hours - stable facts</span>
+    <span class="str">"news"</span>: <span class="num">3600</span>,         <span class="comment"># 1 hour - current events</span>
+    <span class="str">"weather"</span>: <span class="num">1800</span>,       <span class="comment"># 30 min - frequently changes</span>
+    <span class="str">"stock"</span>: <span class="num">60</span>,           <span class="comment"># 1 min - real-time data</span>
+}
+</div>
+</div>
+
+<div class="section">
+<h2>Complete Caching Class</h2>
+<div class="code-block">
+<span class="kw">class</span> SemanticCache:
+    <span class="kw">def</span> __init__(self, threshold=<span class="num">0.92</span>, default_ttl=<span class="num">3600</span>):
+        self.client = valkey.Valkey(decode_responses=<span class="kw">False</span>)
+        self.threshold = threshold
+        self.default_ttl = default_ttl
+        self._create_index()
+    
+    <span class="kw">def</span> _create_index(self):
+        <span class="kw">try</span>:
+            self.client.execute_command(
+                <span class="str">'FT.CREATE'</span>, <span class="str">'idx:cache'</span>, <span class="str">'ON'</span>, <span class="str">'HASH'</span>,
+                <span class="str">'PREFIX'</span>, <span class="str">'1'</span>, <span class="str">'cache:'</span>,
+                <span class="str">'SCHEMA'</span>, <span class="str">'query'</span>, <span class="str">'TEXT'</span>, <span class="str">'response'</span>, <span class="str">'TEXT'</span>,
+                <span class="str">'embedding'</span>, <span class="str">'VECTOR'</span>, <span class="str">'HNSW'</span>, <span class="str">'6'</span>,
+                <span class="str">'TYPE'</span>, <span class="str">'FLOAT32'</span>, <span class="str">'DIM'</span>, <span class="str">'1536'</span>,
+                <span class="str">'DISTANCE_METRIC'</span>, <span class="str">'COSINE'</span>)
+        <span class="kw">except</span>: <span class="kw">pass</span>
+    
+    <span class="kw">async def</span> get(self, query: str) -> str | <span class="kw">None</span>:
+        emb = <span class="kw">await</span> get_embedding(query)
+        vec = np.array(emb, dtype=np.float32).tobytes()
+        
+        results = self.client.execute_command(
+            <span class="str">'FT.SEARCH'</span>, <span class="str">'idx:cache'</span>,
+            <span class="str">'*=>[KNN 1 @embedding $v AS s]'</span>,
+            <span class="str">'PARAMS'</span>, <span class="str">'2'</span>, <span class="str">'v'</span>, vec,
+            <span class="str">'DIALECT'</span>, <span class="str">'2'</span>)
+        
+        <span class="kw">if</span> results[<span class="num">0</span>] > <span class="num">0</span> <span class="kw">and</span> (<span class="num">1</span> - float(results[<span class="num">2</span>][<span class="num">3</span>])) >= self.threshold:
+            <span class="kw">return</span> results[<span class="num">2</span>][<span class="num">1</span>].decode()
+        <span class="kw">return</span> <span class="kw">None</span>
+    
+    <span class="kw">async def</span> set(self, query: str, response: str, ttl: int = <span class="kw">None</span>):
+        key = f<span class="str">"cache:{hashlib.sha256(query.encode()).hexdigest()[:16]}"</span>
+        emb = <span class="kw">await</span> get_embedding(query)
+        self.client.hset(key, mapping={
+            <span class="str">"query"</span>: query, <span class="str">"response"</span>: response,
+            <span class="str">"embedding"</span>: np.array(emb, dtype=np.float32).tobytes()})
+        self.client.expire(key, ttl <span class="kw">or</span> self.default_ttl)
+</div>
+</div>
+
+<div class="warning">
+<strong>⚠️ Watch out:</strong> Semantic caching can return cached answers for queries that seem similar but need different responses. Always validate with real user queries before production.
+</div>
+
+<div class="nav-footer">
+<a href="01-getting-started.html">← Getting Started</a>
+<a href="03-vector-search.html">Next: Vector Search →</a>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Getting Started with RAG Cache — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+<style>
+:root{--accent:#f43f5e}
+.code-block{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:20px;margin:16px 0;font-family:'SF Mono','Fira Code',monospace;font-size:13px;line-height:1.7;overflow-x:auto}
+.code-block .cmd{color:#f43f5e}
+.code-block .str{color:#10b981}
+.code-block .num{color:#f59e0b}
+.code-block .comment{color:rgba(245,245,247,.4)}
+.code-block .kw{color:#8b5cf6}
+.step{margin:32px 0;padding:24px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:12px}
+.step-num{display:inline-block;width:32px;height:32px;background:linear-gradient(135deg,#f43f5e,#e11d48);border-radius:8px;text-align:center;line-height:32px;font-weight:800;font-size:14px;margin-right:12px}
+.step h3{display:inline;font-size:18px;font-weight:700}
+.step p{margin-top:12px;color:rgba(245,245,247,.7);line-height:1.6}
+.nav-footer{display:flex;justify-content:space-between;margin-top:48px;padding-top:24px;border-top:1px solid rgba(255,255,255,.08)}
+.nav-footer a{color:#f43f5e;text-decoration:none;font-weight:600;font-size:14px}
+</style>
+</head>
+<body>
+<nav class="nav"><div class="nav-inner">
+<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent" style="color:#f43f5e">for ai</span></a>
+<div class="nav-links"><a href="/cookbooks/rag-pipelines/">All Cookbooks</a><a href="/demo/rag-pipeline.html">Demo</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div>
+</div></nav>
+
+<div style="max-width:800px;margin:0 auto;padding:48px 24px">
+<a href="/cookbooks/rag-pipelines/" style="color:#f43f5e;font-size:13px;text-decoration:none">← All RAG Cookbooks</a>
+
+<h1 style="font-size:36px;font-weight:900;margin:24px 0 12px">Getting Started with <span style="background:linear-gradient(135deg,#f43f5e,#e11d48);-webkit-background-clip:text;-webkit-text-fill-color:transparent">RAG Cache</span></h1>
+<p style="color:rgba(245,245,247,.6);font-size:16px;margin-bottom:32px">Set up Valkey, create your first vector index, and run semantic search queries.</p>
+
+<div class="step">
+<span class="step-num">1</span>
+<h3>Start Valkey with Docker</h3>
+<p>The easiest way to get started is with Docker. Valkey Stack includes vector search capabilities out of the box.</p>
+<div class="code-block">
+<span class="comment"># Pull and run Valkey Stack</span>
+docker run -d --name valkey \
+  -p <span class="num">6379</span>:<span class="num">6379</span> \
+  valkey/valkey-stack:latest
+
+<span class="comment"># Verify it's running</span>
+docker exec -it valkey valkey-cli ping
+<span class="comment"># Expected: PONG</span>
+</div>
+</div>
+
+<div class="step">
+<span class="step-num">2</span>
+<h3>Create a Vector Search Index</h3>
+<p>Use FT.CREATE to define a schema with text fields and a vector field for embeddings.</p>
+<div class="code-block">
+<span class="cmd">FT.CREATE</span> idx:docs
+  ON HASH
+  PREFIX <span class="num">1</span> <span class="str">"doc:"</span>
+  SCHEMA
+    content <span class="kw">TEXT</span>
+    section <span class="kw">TEXT</span>
+    embedding <span class="kw">VECTOR HNSW</span> <span class="num">6</span>
+      TYPE FLOAT32
+      DIM <span class="num">1536</span>
+      DISTANCE_METRIC COSINE
+</div>
+<p style="margin-top:12px;font-size:13px;color:rgba(245,245,247,.5)"><strong>Parameters:</strong> DIM=1536 matches OpenAI's text-embedding-3-small. Adjust for your embedding model.</p>
+</div>
+
+<div class="step">
+<span class="step-num">3</span>
+<h3>Store Document Chunks</h3>
+<p>Store your document chunks as hashes with their embeddings.</p>
+<div class="code-block">
+<span class="comment"># Python example</span>
+<span class="kw">import</span> valkey
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+client = valkey.Valkey(host=<span class="str">'localhost'</span>, port=<span class="num">6379</span>)
+
+<span class="comment"># Generate embedding (use your embedding provider)</span>
+embedding = get_embedding(<span class="str">"Your document text here..."</span>)
+embedding_bytes = np.array(embedding, dtype=np.float32).tobytes()
+
+<span class="comment"># Store the document</span>
+client.hset(<span class="str">"doc:chunk_001"</span>, mapping={
+    <span class="str">"content"</span>: <span class="str">"Your document text here..."</span>,
+    <span class="str">"section"</span>: <span class="str">"Introduction"</span>,
+    <span class="str">"embedding"</span>: embedding_bytes,
+})
+</div>
+</div>
+
+<div class="step">
+<span class="step-num">4</span>
+<h3>Run a Semantic Search</h3>
+<p>Use FT.SEARCH with KNN to find the most similar documents.</p>
+<div class="code-block">
+<span class="comment"># Generate query embedding</span>
+query = <span class="str">"How do I create an index?"</span>
+query_embedding = get_embedding(query)
+query_bytes = np.array(query_embedding, dtype=np.float32).tobytes()
+
+<span class="comment"># KNN search for top 5 matches</span>
+results = client.execute_command(
+    <span class="str">'FT.SEARCH'</span>, <span class="str">'idx:docs'</span>,
+    <span class="str">'*=>[KNN 5 @embedding $vec AS score]'</span>,
+    <span class="str">'PARAMS'</span>, <span class="str">'2'</span>, <span class="str">'vec'</span>, query_bytes,
+    <span class="str">'SORTBY'</span>, <span class="str">'score'</span>,
+    <span class="str">'RETURN'</span>, <span class="str">'3'</span>, <span class="str">'content'</span>, <span class="str">'section'</span>, <span class="str">'score'</span>,
+    <span class="str">'DIALECT'</span>, <span class="str">'2'</span>
+)
+
+<span class="kw">print</span>(f<span class="str">"Found {results[0]} results"</span>)
+</div>
+</div>
+
+<div class="step">
+<span class="step-num">5</span>
+<h3>Complete Python Example</h3>
+<p>Here's a full working example with OpenAI embeddings:</p>
+<div class="code-block">
+<span class="kw">import</span> valkey
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> openai <span class="kw">import</span> OpenAI
+
+<span class="comment"># Initialize clients</span>
+openai = OpenAI()
+vk = valkey.Valkey(host=<span class="str">'localhost'</span>, port=<span class="num">6379</span>, decode_responses=<span class="kw">False</span>)
+
+<span class="kw">def</span> get_embedding(text):
+    response = openai.embeddings.create(
+        input=text,
+        model=<span class="str">"text-embedding-3-small"</span>
+    )
+    <span class="kw">return</span> response.data[<span class="num">0</span>].embedding
+
+<span class="comment"># Create index (run once)</span>
+<span class="kw">try</span>:
+    vk.execute_command(<span class="str">'FT.CREATE'</span>, <span class="str">'idx:docs'</span>, <span class="str">'ON'</span>, <span class="str">'HASH'</span>,
+        <span class="str">'PREFIX'</span>, <span class="str">'1'</span>, <span class="str">'doc:'</span>,
+        <span class="str">'SCHEMA'</span>, <span class="str">'content'</span>, <span class="str">'TEXT'</span>,
+        <span class="str">'embedding'</span>, <span class="str">'VECTOR'</span>, <span class="str">'HNSW'</span>, <span class="str">'6'</span>,
+        <span class="str">'TYPE'</span>, <span class="str">'FLOAT32'</span>, <span class="str">'DIM'</span>, <span class="str">'1536'</span>,
+        <span class="str">'DISTANCE_METRIC'</span>, <span class="str">'COSINE'</span>)
+<span class="kw">except</span>:
+    <span class="kw">pass</span>  <span class="comment"># Index exists</span>
+
+<span class="comment"># Store a document</span>
+doc_text = <span class="str">"Valkey supports HNSW indexes for fast vector search."</span>
+emb = get_embedding(doc_text)
+vk.hset(<span class="str">"doc:1"</span>, mapping={
+    <span class="str">"content"</span>: doc_text,
+    <span class="str">"embedding"</span>: np.array(emb, dtype=np.float32).tobytes()
+})
+
+<span class="comment"># Search</span>
+query_emb = get_embedding(<span class="str">"How does vector search work?"</span>)
+results = vk.execute_command(
+    <span class="str">'FT.SEARCH'</span>, <span class="str">'idx:docs'</span>,
+    <span class="str">'*=>[KNN 3 @embedding $vec AS score]'</span>,
+    <span class="str">'PARAMS'</span>, <span class="str">'2'</span>, <span class="str">'vec'</span>,
+    np.array(query_emb, dtype=np.float32).tobytes(),
+    <span class="str">'DIALECT'</span>, <span class="str">'2'</span>)
+<span class="kw">print</span>(results)
+</div>
+</div>
+
+<div style="margin-top:32px;padding:20px;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.2);border-radius:10px">
+<strong style="color:#10b981">✓ What you've learned:</strong>
+<ul style="margin:12px 0 0 20px;color:rgba(245,245,247,.7);line-height:1.8">
+<li>Starting Valkey with Docker</li>
+<li>Creating a vector search index with FT.CREATE</li>
+<li>Storing documents with embeddings</li>
+<li>Running KNN semantic search queries</li>
+</ul>
+</div>
+
+<div class="nav-footer">
+<span></span>
+<a href="02-semantic-caching.html">Next: Semantic Caching →</a>
+</div>
+</div>
+</body>
+</html>
