@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>03 — Hybrid Search — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/vector-search/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div></div></nav>
+<article>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/vector-search/">Vector Search</a> → 03 Hybrid Search</div>
+<div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~25 min</span></div>
+<h1>Hybrid <span class="gradient">Search</span></h1>
+<p class="lead">Combine vector similarity with TAG, NUMERIC, and TEXT filters. Find semantically similar documents that also match specific metadata criteria.</p>
+
+<h2>Why Hybrid Search?</h2>
+<p>Pure vector search returns the most similar items globally. But often you need to filter first — "find similar articles, but only in the <em>tech</em> category" or "similar products under $50." Hybrid search lets you combine vector KNN with traditional filters in a single query.</p>
+
+<h2>Step 1: Create an Index with Multiple Field Types</h2>
+<pre><code><span class="keyword">import</span> redis
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+client = redis.Redis(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>)
+
+<span class="keyword">def</span> <span class="func">vec_to_bytes</span>(vec):
+    <span class="keyword">return</span> np.array(vec, dtype=np.float32).tobytes()
+
+<span class="comment"># Create index with VECTOR + TAG + NUMERIC + TEXT fields</span>
+<span class="keyword">try</span>:
+    client.execute_command(
+        <span class="string">"FT.CREATE"</span>, <span class="string">"articles_idx"</span>,
+        <span class="string">"SCHEMA"</span>,
+        <span class="string">"title"</span>, <span class="string">"TEXT"</span>,
+        <span class="string">"category"</span>, <span class="string">"TAG"</span>,
+        <span class="string">"year"</span>, <span class="string">"NUMERIC"</span>,
+        <span class="string">"embedding"</span>, <span class="string">"VECTOR"</span>, <span class="string">"HNSW"</span>, <span class="string">"6"</span>,
+        <span class="string">"TYPE"</span>, <span class="string">"FLOAT32"</span>,
+        <span class="string">"DIM"</span>, <span class="string">"4"</span>,
+        <span class="string">"DISTANCE_METRIC"</span>, <span class="string">"COSINE"</span>,
+    )
+    <span class="func">print</span>(<span class="string">"Index created with TEXT + TAG + NUMERIC + VECTOR"</span>)
+<span class="keyword">except</span> redis.ResponseError <span class="keyword">as</span> e:
+    <span class="func">print</span>(<span class="string">f"Index exists: {e}"</span>)</code></pre>
+
+<h2>Step 2: Store Documents with Metadata</h2>
+<pre><code><span class="comment"># Articles with category tags, year, and embeddings</span>
+articles = [
+    {<span class="string">"key"</span>: <span class="string">"art:1"</span>, <span class="string">"title"</span>: <span class="string">"Introduction to Vector Databases"</span>,
+     <span class="string">"category"</span>: <span class="string">"tech"</span>, <span class="string">"year"</span>: <span class="string">"2024"</span>,
+     <span class="string">"embedding"</span>: vec_to_bytes([<span class="num">0.9</span>, <span class="num">0.1</span>, <span class="num">0.2</span>, <span class="num">0.3</span>])},
+    {<span class="string">"key"</span>: <span class="string">"art:2"</span>, <span class="string">"title"</span>: <span class="string">"Deep Learning for NLP"</span>,
+     <span class="string">"category"</span>: <span class="string">"tech"</span>, <span class="string">"year"</span>: <span class="string">"2023"</span>,
+     <span class="string">"embedding"</span>: vec_to_bytes([<span class="num">0.8</span>, <span class="num">0.15</span>, <span class="num">0.25</span>, <span class="num">0.35</span>])},
+    {<span class="string">"key"</span>: <span class="string">"art:3"</span>, <span class="string">"title"</span>: <span class="string">"Cooking with AI-Generated Recipes"</span>,
+     <span class="string">"category"</span>: <span class="string">"food"</span>, <span class="string">"year"</span>: <span class="string">"2024"</span>,
+     <span class="string">"embedding"</span>: vec_to_bytes([<span class="num">0.1</span>, <span class="num">0.8</span>, <span class="num">0.6</span>, <span class="num">0.2</span>])},
+    {<span class="string">"key"</span>: <span class="string">"art:4"</span>, <span class="string">"title"</span>: <span class="string">"Scaling Valkey for Production"</span>,
+     <span class="string">"category"</span>: <span class="string">"tech"</span>, <span class="string">"year"</span>: <span class="string">"2025"</span>,
+     <span class="string">"embedding"</span>: vec_to_bytes([<span class="num">0.85</span>, <span class="num">0.12</span>, <span class="num">0.18</span>, <span class="num">0.4</span>])},
+    {<span class="string">"key"</span>: <span class="string">"art:5"</span>, <span class="string">"title"</span>: <span class="string">"Healthy Meal Planning with ML"</span>,
+     <span class="string">"category"</span>: <span class="string">"food"</span>, <span class="string">"year"</span>: <span class="string">"2025"</span>,
+     <span class="string">"embedding"</span>: vec_to_bytes([<span class="num">0.15</span>, <span class="num">0.75</span>, <span class="num">0.55</span>, <span class="num">0.25</span>])},
+    {<span class="string">"key"</span>: <span class="string">"art:6"</span>, <span class="string">"title"</span>: <span class="string">"Financial Forecasting with AI"</span>,
+     <span class="string">"category"</span>: <span class="string">"finance"</span>, <span class="string">"year"</span>: <span class="string">"2024"</span>,
+     <span class="string">"embedding"</span>: vec_to_bytes([<span class="num">0.3</span>, <span class="num">0.4</span>, <span class="num">0.1</span>, <span class="num">0.9</span>])},
+]
+
+<span class="keyword">for</span> art <span class="keyword">in</span> articles:
+    key = art.pop(<span class="string">"key"</span>)
+    client.hset(key, mapping=art)
+<span class="func">print</span>(<span class="string">f"Stored {len(articles)} articles"</span>)</code></pre>
+
+<h2>Step 3: TAG Filter + Vector Search</h2>
+<p>Find similar articles, but <strong>only in the "tech" category</strong>:</p>
+<pre><code>query_vec = vec_to_bytes([<span class="num">0.88</span>, <span class="num">0.1</span>, <span class="num">0.2</span>, <span class="num">0.35</span>])
+
+<span class="comment"># TAG filter: @category:{tech}</span>
+<span class="comment"># Combined with KNN: @category:{tech}=>[KNN 3 @embedding $query_vec]</span>
+results = client.execute_command(
+    <span class="string">"FT.SEARCH"</span>, <span class="string">"articles_idx"</span>,
+    <span class="string">"@category:{tech}=>[KNN 3 @embedding $query_vec]"</span>,
+    <span class="string">"PARAMS"</span>, <span class="string">"2"</span>, <span class="string">"query_vec"</span>, query_vec,
+    <span class="string">"DIALECT"</span>, <span class="string">"2"</span>,
+)
+
+<span class="func">print</span>(<span class="string">f"Tech articles (KNN): {results[0]} results"</span>)
+<span class="keyword">for</span> i <span class="keyword">in</span> <span class="func">range</span>(<span class="num">1</span>, <span class="func">len</span>(results), <span class="num">2</span>):
+    fields = results[i + <span class="num">1</span>]
+    fd = {fields[j]: fields[j+<span class="num">1</span>] <span class="keyword">for</span> j <span class="keyword">in</span> <span class="func">range</span>(<span class="num">0</span>, <span class="func">len</span>(fields), <span class="num">2</span>)}
+    <span class="func">print</span>(<span class="string">f"  {results[i]}: {fd.get('title')} [{fd.get('category')}]"</span>)
+
+<span class="comment"># Only returns tech articles — food and finance are excluded!</span></code></pre>
+
+<h2>Step 4: NUMERIC Range + Vector Search</h2>
+<p>Find similar articles from <strong>2024 or later</strong>:</p>
+<pre><code><span class="comment"># NUMERIC filter: @year:[2024 +inf]</span>
+results = client.execute_command(
+    <span class="string">"FT.SEARCH"</span>, <span class="string">"articles_idx"</span>,
+    <span class="string">"@year:[2024 +inf]=>[KNN 3 @embedding $query_vec]"</span>,
+    <span class="string">"PARAMS"</span>, <span class="string">"2"</span>, <span class="string">"query_vec"</span>, query_vec,
+    <span class="string">"DIALECT"</span>, <span class="string">"2"</span>,
+)
+
+<span class="func">print</span>(<span class="string">f"\nArticles from 2024+: {results[0]} results"</span>)
+<span class="keyword">for</span> i <span class="keyword">in</span> <span class="func">range</span>(<span class="num">1</span>, <span class="func">len</span>(results), <span class="num">2</span>):
+    fields = results[i + <span class="num">1</span>]
+    fd = {fields[j]: fields[j+<span class="num">1</span>] <span class="keyword">for</span> j <span class="keyword">in</span> <span class="func">range</span>(<span class="num">0</span>, <span class="func">len</span>(fields), <span class="num">2</span>)}
+    <span class="func">print</span>(<span class="string">f"  {results[i]}: {fd.get('title')} ({fd.get('year')})"</span>)</code></pre>
+
+<h2>Step 5: Combined TAG + NUMERIC + Vector</h2>
+<p>Find similar <strong>tech articles from 2024+</strong>:</p>
+<pre><code><span class="comment"># Combine multiple filters</span>
+results = client.execute_command(
+    <span class="string">"FT.SEARCH"</span>, <span class="string">"articles_idx"</span>,
+    <span class="string">"(@category:{tech} @year:[2024 +inf])=>[KNN 3 @embedding $query_vec]"</span>,
+    <span class="string">"PARAMS"</span>, <span class="string">"2"</span>, <span class="string">"query_vec"</span>, query_vec,
+    <span class="string">"DIALECT"</span>, <span class="string">"2"</span>,
+)
+
+<span class="func">print</span>(<span class="string">f"\nTech articles from 2024+: {results[0]} results"</span>)
+<span class="keyword">for</span> i <span class="keyword">in</span> <span class="func">range</span>(<span class="num">1</span>, <span class="func">len</span>(results), <span class="num">2</span>):
+    fields = results[i + <span class="num">1</span>]
+    fd = {fields[j]: fields[j+<span class="num">1</span>] <span class="keyword">for</span> j <span class="keyword">in</span> <span class="func">range</span>(<span class="num">0</span>, <span class="func">len</span>(fields), <span class="num">2</span>)}
+    <span class="func">print</span>(<span class="string">f"  {results[i]}: {fd.get('title')} [{fd.get('category')}, {fd.get('year')}]"</span>)</code></pre>
+
+<h2>Filter Syntax Reference</h2>
+<table>
+<tr><th>Filter Type</th><th>Syntax</th><th>Example</th></tr>
+<tr><td>TAG exact</td><td><code>@field:{value}</code></td><td><code>@category:{tech}</code></td></tr>
+<tr><td>TAG OR</td><td><code>@field:{val1|val2}</code></td><td><code>@category:{tech|science}</code></td></tr>
+<tr><td>NUMERIC range</td><td><code>@field:[min max]</code></td><td><code>@year:[2024 2025]</code></td></tr>
+<tr><td>NUMERIC &ge;</td><td><code>@field:[min +inf]</code></td><td><code>@year:[2024 +inf]</code></td></tr>
+<tr><td>NUMERIC &le;</td><td><code>@field:[-inf max]</code></td><td><code>@price:[-inf 50]</code></td></tr>
+<tr><td>Combined AND</td><td><code>(@filter1 @filter2)</code></td><td><code>(@category:{tech} @year:[2024 +inf])</code></td></tr>
+</table>
+
+<div class="callout">
+<p><strong>Filter + KNN pattern:</strong> <code>"FILTER_EXPRESSION=>[KNN k @vector $param]"</code>. The filter runs first (pre-filtering), then KNN finds the nearest neighbors within the filtered set.</p>
+</div>
+
+<div class="nav-prev-next">
+<a href="02-semantic-search.html" class="prev"><span class="label">← Previous</span><span class="title">02 — Semantic Search</span></a>
+<a href="/cookbooks/vector-search/" class="next"><span class="label">Back to →</span><span class="title">Vector Search Cookbooks</span></a>
+</div>
+</article></body></html>

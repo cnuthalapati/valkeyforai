@@ -3,25 +3,57 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vector Search and Embeddings — Valkey for AI</title>
+<title>Vector Search — Valkey for AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../use-case.css">
-<style>:root{--accent-color:#ec4899;--accent-color2:#f43f5e;--accent-gradient:linear-gradient(135deg,#ec4899,#f43f5e);--accent-bg:linear-gradient(135deg,#ec4899,#f43f5e);--accent-glow:rgba(236,72,153,.18)}.btn-primary{background:linear-gradient(135deg,#ec4899,#f43f5e)}.uc-breadcrumb a{color:#ec4899}</style>
+<style>:root{--accent-color:#ec4899;--accent-color2:#f43f5e;--accent-gradient:linear-gradient(135deg,#ec4899,#f43f5e);--accent-bg:linear-gradient(135deg,#ec4899,#f43f5e);--accent-glow:rgba(236,72,153,.18)}.btn-primary{background:linear-gradient(135deg,#ec4899,#f43f5e)}.btn-primary:hover{box-shadow:0 4px 20px rgba(236,72,153,.35)}.uc-breadcrumb a{color:#ec4899}</style>
 </head>
 <body>
-<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div></div></nav>
+<nav class="nav"><div class="nav-inner">
+  <a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
+  <div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/use-cases/vector-search/">Vector Search</a><a href="/demo/vector-search.html">Live Demo</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div>
+</div></nav>
+
 <div class="uc-hero">
-<div class="uc-breadcrumb"><a href="/">Home</a> &rarr; <a href="/#use-cases">Use Cases</a> &rarr; Semantic Caching</div>
-<div class="uc-icon-wrap" style="background:linear-gradient(135deg,#ec4899,#f43f5e)"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div>
-<h1>Vector Search<br><span>&amp; Embeddings</span></h1>
-<p>Native vector similarity search with HNSW indexing for semantic search and RAG.</p>
-<div class="uc-hero-tags"><span>Embeddings</span><span>HNSW</span><span>KNN</span><span>Search</span></div>
+  <div class="uc-breadcrumb"><a href="/">Home</a> &rarr; <a href="/#use-cases">Use Cases</a> &rarr; Vector Search</div>
+  <div class="uc-icon-wrap" style="background:linear-gradient(135deg,#ec4899,#f43f5e)">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+  </div>
+  <h1>Vector<br><span>Search</span></h1>
+  <p>Native vector similarity search with the valkey-search module. HNSW indexing, KNN queries, hybrid filters, and sub-millisecond nearest-neighbor lookups.</p>
+  <div class="uc-hero-tags"><span>valkey-search</span><span>HNSW</span><span>KNN</span><span>Embeddings</span><span>Hybrid Search</span></div>
 </div>
-<div style="max-width:800px;margin:0 auto;padding:0 24px 48px"><div style="background:linear-gradient(135deg,rgba(236,72,153,.08),rgba(139,92,246,.08));border:1px solid rgba(236,72,153,.2);border-radius:16px;padding:48px;text-align:center">
-<div style="display:inline-block;padding:4px 12px;border-radius:100px;font-size:11px;font-weight:600;background:rgba(236,72,153,.15);color:#818cf8;margin-bottom:16px">Cookbooks &amp; Demo Coming Soon</div>
-<h2 style="font-size:28px;font-weight:900;margin-bottom:12px">Vector Search cookbooks are in progress</h2>
-<p style="font-size:16px;color:rgba(245,245,247,.65);max-width:500px;margin:0 auto 32px">Step-by-step guides and a live interactive demo are being built. Explore the existing cookbooks in the meantime.</p>
-<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><a href="/use-cases/rate-limiting/" class="btn btn-primary">Rate Limiting (6 Cookbooks) &#8599;</a><a href="/use-cases/feature-store/" class="btn btn-outline">Feature Store (6 Cookbooks) &#8599;</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank" class="btn btn-outline">GitHub &#8599;</a></div>
+
+<div class="uc-main">
+  <div class="uc-panel">
+    <div class="uc-panel-header">
+      <h2><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg> Cookbooks</h2>
+      <p>3 guides using the valkey-search module with FT.CREATE, FT.SEARCH, and hybrid filters</p>
+    </div>
+    <div class="uc-panel-body">
+      <ul class="cb-list">
+        <li class="cb-item"><a href="/cookbooks/vector-search/01-getting-started.html"><span class="cb-num">01</span><div class="cb-info"><h4>Getting Started</h4><p>FT.CREATE with HNSW, store FLOAT32 vectors, run KNN search</p><div class="cb-badges"><span class="cb-badge easy">Beginner</span><span class="cb-badge time">~10 min</span></div></div></a></li>
+        <li class="cb-item"><a href="/cookbooks/vector-search/02-semantic-search.html"><span class="cb-num">02</span><div class="cb-info"><h4>Semantic Search with Embeddings</h4><p>OpenAI embeddings, 1536-dim vectors, search by meaning</p><div class="cb-badges"><span class="cb-badge medium">Intermediate</span><span class="cb-badge time">~20 min</span></div></div></a></li>
+        <li class="cb-item"><a href="/cookbooks/vector-search/03-hybrid-search.html"><span class="cb-num">03</span><div class="cb-info"><h4>Hybrid Search</h4><p>Combine KNN with TAG, NUMERIC, and TEXT filters</p><div class="cb-badges"><span class="cb-badge hard">Advanced</span><span class="cb-badge time">~25 min</span></div></div></a></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="uc-panel" style="display:flex;flex-direction:column">
+    <div class="uc-panel-header">
+      <h2><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> Live Demo</h2>
+      <p>Create indexes, add documents, run KNN and hybrid searches with score visualization</p>
+    </div>
+    <iframe class="demo-frame" src="/demo/vector-search.html" title="Vector Search Demo"></iframe>
+  </div>
+</div>
+
+<div class="uc-github"><div class="uc-github-card">
+  <div><h3>Complete source code on GitHub</h3><p>All cookbooks and demo code for vector search with valkey-search.</p></div>
+  <div class="uc-github-card-actions">
+    <a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank" class="btn btn-primary">View on GitHub &rarr;</a>
+    <a href="/cookbooks/vector-search/" class="btn btn-outline">All 3 Cookbooks &rarr;</a>
+  </div>
 </div></div>
-<div class="uc-github"><div class="uc-github-card"><div><h3>Star the repo to get notified</h3><p>All cookbooks are open source. Star the repo to follow progress.</p></div><div class="uc-github-card-actions"><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank" class="btn btn-primary">View on GitHub &rarr;</a><a href="/" class="btn btn-outline">All Use Cases &rarr;</a></div></div></div>
-</body></html>
+</body>
+</html>

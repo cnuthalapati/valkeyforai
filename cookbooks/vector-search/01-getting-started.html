@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>01 — Getting Started with Vector Search — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/vector-search/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div></div></nav>
+<article>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/vector-search/">Vector Search</a> → 01 Getting Started</div>
+<div class="meta"><span class="diff-easy">Beginner</span><span class="lang">Python</span><span class="lang">~10 min</span></div>
+<h1>Getting Started with <span class="gradient">Vector Search</span></h1>
+<p class="lead">Create your first vector index with valkey-search, store embeddings, and run KNN queries. All in under 10 minutes.</p>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>Valkey server with the <strong>valkey-search</strong> module loaded</li>
+<li>Python 3.9+ with the <code>redis</code> package</li>
+</ul>
+
+<h2>Step 1: Start Valkey with Search Module</h2>
+<pre><code><span class="comment"># Start Valkey with the search module loaded</span>
+valkey-server --loadmodule /path/to/libsearch.so</code></pre>
+<p>Verify the module is loaded:</p>
+<pre><code>valkey-cli MODULE LIST
+<span class="comment"># Should show "search" in the output</span></code></pre>
+
+<h2>Step 2: Install Python Client</h2>
+<pre><code>pip install redis</code></pre>
+<p>We use the standard <code>redis</code> Python client. Module commands like <code>FT.CREATE</code> are called via <code>execute_command()</code>.</p>
+
+<h2>Step 3: Create a Vector Index</h2>
+<pre><code><span class="keyword">import</span> redis
+<span class="keyword">import</span> struct
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+client = redis.Redis(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>)
+
+<span class="comment"># Create an index with a 3-dimensional FLOAT32 vector field using HNSW</span>
+<span class="comment"># Syntax: FT.CREATE index SCHEMA field_name VECTOR HNSW num_params TYPE DIM DISTANCE_METRIC</span>
+<span class="keyword">try</span>:
+    client.execute_command(
+        <span class="string">"FT.CREATE"</span>, <span class="string">"doc_index"</span>,
+        <span class="string">"SCHEMA"</span>,
+        <span class="string">"embedding"</span>, <span class="string">"VECTOR"</span>, <span class="string">"HNSW"</span>, <span class="string">"6"</span>,
+        <span class="string">"TYPE"</span>, <span class="string">"FLOAT32"</span>,
+        <span class="string">"DIM"</span>, <span class="string">"3"</span>,
+        <span class="string">"DISTANCE_METRIC"</span>, <span class="string">"COSINE"</span>,
+    )
+    <span class="func">print</span>(<span class="string">"Index created!"</span>)
+<span class="keyword">except</span> redis.ResponseError <span class="keyword">as</span> e:
+    <span class="func">print</span>(<span class="string">f"Index may already exist: {e}"</span>)</code></pre>
+
+<div class="callout">
+<p><strong>Key parameters:</strong> <code>HNSW</code> is the indexing algorithm (fast approximate search). <code>6</code> means 3 key-value pairs follow: TYPE, DIM, DISTANCE_METRIC. <code>COSINE</code> measures angle similarity (best for normalized embeddings).</p>
+</div>
+
+<h2>Step 4: Store Vectors</h2>
+<p>Vectors must be stored as binary FLOAT32 data. Use Python's <code>struct.pack</code> or NumPy's <code>.tobytes()</code>:</p>
+<pre><code><span class="comment"># Helper: convert a list of floats to binary FLOAT32</span>
+<span class="keyword">def</span> <span class="func">vec_to_bytes</span>(vec):
+    <span class="keyword">return</span> np.array(vec, dtype=np.float32).tobytes()
+
+<span class="comment"># Store documents with embeddings using HSET</span>
+documents = {
+    <span class="string">"doc:1"</span>: {<span class="string">"content"</span>: <span class="string">"Valkey is a fast in-memory data store"</span>,
+              <span class="string">"embedding"</span>: vec_to_bytes([<span class="num">0.1</span>, <span class="num">0.2</span>, <span class="num">0.9</span>])},
+    <span class="string">"doc:2"</span>: {<span class="string">"content"</span>: <span class="string">"Python is great for machine learning"</span>,
+              <span class="string">"embedding"</span>: vec_to_bytes([<span class="num">0.8</span>, <span class="num">0.1</span>, <span class="num">0.3</span>])},
+    <span class="string">"doc:3"</span>: {<span class="string">"content"</span>: <span class="string">"Vector search finds similar items fast"</span>,
+              <span class="string">"embedding"</span>: vec_to_bytes([<span class="num">0.15</span>, <span class="num">0.25</span>, <span class="num">0.85</span>])},
+    <span class="string">"doc:4"</span>: {<span class="string">"content"</span>: <span class="string">"Neural networks power modern AI"</span>,
+              <span class="string">"embedding"</span>: vec_to_bytes([<span class="num">0.7</span>, <span class="num">0.2</span>, <span class="num">0.4</span>])},
+}
+
+<span class="keyword">for</span> key, fields <span class="keyword">in</span> documents.items():
+    client.hset(key, mapping=fields)
+    <span class="func">print</span>(<span class="string">f"Stored: {key}"</span>)
+
+<span class="func">print</span>(<span class="string">f"Stored {len(documents)} documents"</span>)</code></pre>
+
+<h2>Step 5: Run a KNN Search</h2>
+<pre><code><span class="comment"># Query vector — find documents similar to this</span>
+query_vec = vec_to_bytes([<span class="num">0.12</span>, <span class="num">0.22</span>, <span class="num">0.88</span>])
+
+<span class="comment"># FT.SEARCH with KNN query</span>
+<span class="comment"># "*=>[KNN k @field $param]" finds the k nearest neighbors</span>
+results = client.execute_command(
+    <span class="string">"FT.SEARCH"</span>, <span class="string">"doc_index"</span>,
+    <span class="string">"*=>[KNN 3 @embedding $query_vec]"</span>,
+    <span class="string">"PARAMS"</span>, <span class="string">"2"</span>, <span class="string">"query_vec"</span>, query_vec,
+    <span class="string">"DIALECT"</span>, <span class="string">"2"</span>,
+)
+
+<span class="comment"># Parse results</span>
+<span class="comment"># results[0] = total count</span>
+<span class="comment"># results[1] = first doc key, results[2] = first doc fields</span>
+<span class="comment"># results[3] = second doc key, results[4] = second doc fields, etc.</span>
+num_results = results[<span class="num">0</span>]
+<span class="func">print</span>(<span class="string">f"Found {num_results} results:\n"</span>)
+
+<span class="keyword">for</span> i <span class="keyword">in</span> <span class="func">range</span>(<span class="num">1</span>, <span class="func">len</span>(results), <span class="num">2</span>):
+    doc_key = results[i]
+    fields = results[i + <span class="num">1</span>]
+    <span class="comment"># fields is a list of [field_name, value, field_name, value, ...]</span>
+    field_dict = {fields[j]: fields[j+<span class="num">1</span>] <span class="keyword">for</span> j <span class="keyword">in</span> <span class="func">range</span>(<span class="num">0</span>, <span class="func">len</span>(fields), <span class="num">2</span>)}
+    score = field_dict.get(<span class="string">"__embedding_score"</span>, <span class="string">"N/A"</span>)
+    content = field_dict.get(<span class="string">"content"</span>, <span class="string">""</span>)
+    <span class="func">print</span>(<span class="string">f"  {doc_key} (score: {score})"</span>)
+    <span class="func">print</span>(<span class="string">f"    {content}\n"</span>)</code></pre>
+
+<p><strong>Expected output:</strong></p>
+<pre><code>Found 3 results:
+
+  doc:3 (score: 0.0012...)
+    Vector search finds similar items fast
+
+  doc:1 (score: 0.0045...)
+    Valkey is a fast in-memory data store
+
+  doc:4 (score: 0.32...)
+    Neural networks power modern AI</code></pre>
+
+<h2>Step 6: Check Index Info</h2>
+<pre><code><span class="comment"># Get index metadata</span>
+info = client.execute_command(<span class="string">"FT.INFO"</span>, <span class="string">"doc_index"</span>)
+<span class="func">print</span>(info)</code></pre>
+
+<h2>How It Works</h2>
+<table>
+<tr><th>Operation</th><th>Command</th><th>Notes</th></tr>
+<tr><td>Create index</td><td><code>FT.CREATE</code></td><td>Defines fields and vector params</td></tr>
+<tr><td>Store vector</td><td><code>HSET key field value</code></td><td>Vectors as binary FLOAT32</td></tr>
+<tr><td>KNN search</td><td><code>FT.SEARCH idx "*=>[KNN k @field $param]"</code></td><td>Returns k nearest neighbors</td></tr>
+<tr><td>Index info</td><td><code>FT.INFO idx</code></td><td>Shows schema, doc count, etc.</td></tr>
+<tr><td>Drop index</td><td><code>FT.DROPINDEX idx</code></td><td>Removes index (not data)</td></tr>
+</table>
+
+<div class="callout">
+<p><strong>Important:</strong> Vectors MUST be binary FLOAT32 data, not strings. Always use <code>np.array(vec, dtype=np.float32).tobytes()</code> or <code>struct.pack(f'{len(vec)}f', *vec)</code> to serialize.</p>
+</div>
+
+<div class="nav-prev-next">
+<div></div>
+<a href="02-semantic-search.html" class="next"><span class="label">Next →</span><span class="title">02 — Semantic Search with Embeddings</span></a>
+</div>
+</article></body></html>

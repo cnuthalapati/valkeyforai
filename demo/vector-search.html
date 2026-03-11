@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vector Search Demo — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0a;--card:rgba(255,255,255,.04);--brd:rgba(255,255,255,.08);--t1:#f5f5f7;--t2:rgba(245,245,247,.6);--t3:rgba(245,245,247,.4);--accent:#ec4899;--accent2:#f43f5e;--radius:12px;--font:'Inter',system-ui,sans-serif}
+body{font-family:var(--font);background:var(--bg);color:var(--t1);line-height:1.5;padding:24px}
+h1{font-size:28px;font-weight:900;letter-spacing:-.03em;margin-bottom:4px}
+h1 span{color:var(--accent)}
+.subtitle{font-size:14px;color:var(--t2);margin-bottom:24px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+@media(max-width:700px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--brd);border-radius:var(--radius);overflow:hidden}
+.panel-header{padding:14px 18px;border-bottom:1px solid var(--brd)}
+.panel-header h3{font-size:14px;font-weight:700}
+.panel-body{padding:16px 18px}
+.stat-row{display:flex;gap:16px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--brd);border-radius:var(--radius);padding:14px 18px;flex:1;text-align:center}
+.stat .num{font-size:28px;font-weight:900;color:var(--accent)}
+.stat .label{font-size:11px;color:var(--t3);text-transform:uppercase}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+input,select{background:rgba(255,255,255,.06);border:1px solid var(--brd);border-radius:8px;padding:8px 12px;color:var(--t1);font-family:var(--font);font-size:13px;outline:none}
+input:focus{border-color:var(--accent)}
+input::placeholder{color:var(--t3)}
+button{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;border-radius:8px;padding:8px 18px;font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;transition:.2s}
+button:hover{transform:translateY(-1px)}
+button.secondary{background:rgba(255,255,255,.06);color:var(--t1);border:1px solid var(--brd)}
+.log{font-family:'SF Mono','Fira Code',monospace;font-size:12px;line-height:1.8;max-height:300px;overflow-y:auto;color:var(--t2)}
+.log .cmd{color:var(--accent);font-weight:600}
+.log .result{color:#a5f3fc}
+.log .score{color:#fbbf24}
+.result-card{background:rgba(255,255,255,.03);border:1px solid var(--brd);border-radius:8px;padding:12px;margin-bottom:8px}
+.result-card .title{font-weight:600;margin-bottom:4px}
+.result-card .meta{font-size:12px;color:var(--t3)}
+.result-card .score-bar{height:4px;border-radius:2px;background:rgba(255,255,255,.06);margin-top:8px;overflow:hidden}
+.result-card .score-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.vec-viz{display:flex;gap:2px;align-items:flex-end;height:40px;margin:8px 0}
+.vec-viz .bar{flex:1;border-radius:2px 2px 0 0;background:var(--accent);min-width:3px;transition:.3s}
+</style>
+</head>
+<body>
+<h1>Vector <span>Search</span> Demo</h1>
+<p class="subtitle">Simulate valkey-search operations — create indexes, store vectors, and run KNN queries with scoring visualization.</p>
+
+<div class="stat-row">
+<div class="stat"><div class="num" id="docCount">0</div><div class="label">Documents</div></div>
+<div class="stat"><div class="num" id="queryCount">0</div><div class="label">Queries</div></div>
+<div class="stat"><div class="num" id="indexDim">3</div><div class="label">Dimensions</div></div>
+<div class="stat"><div class="num" id="latency">0.1</div><div class="label">Latency (ms)</div></div>
+</div>
+
+<div class="grid">
+<div class="panel">
+<div class="panel-header"><h3>📝 Index & Documents</h3></div>
+<div class="panel-body">
+<div class="controls">
+<select id="dimSelect"><option value="3">3 Dimensions</option><option value="4">4 Dimensions</option></select>
+<select id="metricSelect"><option value="COSINE">COSINE</option><option value="L2">L2</option><option value="IP">IP</option></select>
+<button onclick="createIndex()">FT.CREATE</button>
+</div>
+<div class="controls">
+<button onclick="addSampleDocs()">Add 6 Sample Docs</button>
+<button class="secondary" onclick="addCustomDoc()">Add Custom</button>
+</div>
+<div class="controls" id="customDocRow" style="display:none">
+<input id="customContent" placeholder="Document text..." style="flex:2">
+<input id="customVec" placeholder="0.1, 0.2, 0.9" style="flex:1">
+<button onclick="submitCustom()">HSET</button>
+</div>
+<div class="log" id="indexLog"></div>
+</div>
+</div>
+<div class="panel">
+<div class="panel-header"><h3>🔍 KNN Search</h3></div>
+<div class="panel-body">
+<div class="controls">
+<input id="queryVec" placeholder="Query vector: 0.1, 0.2, 0.9" style="flex:2" value="0.1, 0.2, 0.9">
+<select id="kSelect"><option value="3">K=3</option><option value="5">K=5</option><option value="1">K=1</option></select>
+<button onclick="knnSearch()">FT.SEARCH</button>
+</div>
+<div class="controls">
+<select id="filterSelect"><option value="">No filter</option><option value="tech">@category:{tech}</option><option value="food">@category:{food}</option><option value="2024">@year:[2024 +inf]</option></select>
+<button onclick="hybridSearch()">Hybrid Search</button>
+</div>
+<p style="font-size:11px;color:var(--t3);margin-bottom:8px">Query vector visualization:</p>
+<div class="vec-viz" id="queryViz"></div>
+<div id="searchResults"></div>
+</div>
+</div>
+</div>
+
+<div class="panel">
+<div class="panel-header"><h3>📋 Command Log</h3></div>
+<div class="panel-body"><div class="log" id="cmdLog"><div style="color:var(--t3)">Commands will appear here...</div></div></div>
+</div>
+
+<script>
+let docs=[],queries=0,dim=3;
+const sampleDocs3=[
+{content:"Valkey is a fast in-memory data store",vec:[.1,.2,.9],category:"tech",year:2024},
+{content:"Python powers modern AI development",vec:[.8,.1,.3],category:"tech",year:2023},
+{content:"Vector search finds similar items",vec:[.15,.25,.85],category:"tech",year:2025},
+{content:"Neural networks learn patterns from data",vec:[.7,.2,.4],category:"tech",year:2024},
+{content:"Cooking with AI-generated recipes",vec:[.1,.8,.6],category:"food",year:2024},
+{content:"Financial forecasting with machine learning",vec:[.3,.4,.9],category:"finance",year:2025},
+];
+const sampleDocs4=[
+{content:"Valkey is a fast in-memory data store",vec:[.9,.1,.2,.3],category:"tech",year:2024},
+{content:"Deep learning for NLP tasks",vec:[.8,.15,.25,.35],category:"tech",year:2023},
+{content:"Cooking with AI recipes",vec:[.1,.8,.6,.2],category:"food",year:2024},
+{content:"Scaling Valkey for production",vec:[.85,.12,.18,.4],category:"tech",year:2025},
+{content:"Healthy meal planning with ML",vec:[.15,.75,.55,.25],category:"food",year:2025},
+{content:"Financial forecasting with AI",vec:[.3,.4,.1,.9],category:"finance",year:2024},
+];
+
+function log(el,html){const d=document.createElement('div');d.innerHTML=html;document.getElementById(el).appendChild(d);document.getElementById(el).scrollTop=9999}
+function updateStats(){document.getElementById('docCount').textContent=docs.length;document.getElementById('queryCount').textContent=queries;document.getElementById('indexDim').textContent=dim;document.getElementById('latency').textContent=(Math.random()*.15+.05).toFixed(2)}
+
+function createIndex(){
+dim=+document.getElementById('dimSelect').value;
+const metric=document.getElementById('metricSelect').value;
+docs=[];
+log('indexLog',`<span class="cmd">FT.CREATE</span> vec_idx SCHEMA content TEXT category TAG year NUMERIC embedding VECTOR HNSW 6 TYPE FLOAT32 DIM ${dim} DISTANCE_METRIC ${metric}`);
+log('cmdLog',`<span class="cmd">FT.CREATE</span> vec_idx ... DIM ${dim} ${metric} → <span class="result">OK</span>`);
+updateStats();
+}
+
+function addSampleDocs(){
+const samples=dim===3?sampleDocs3:sampleDocs4;
+samples.forEach((d,i)=>{
+docs.push(d);
+log('indexLog',`<span class="cmd">HSET</span> doc:${i} content "${d.content.slice(0,40)}..." category ${d.category} year ${d.year} embedding [${d.vec.map(v=>v.toFixed(2))}]`);
+});
+log('cmdLog',`<span class="cmd">HSET</span> x${samples.length} → <span class="result">${samples.length} docs stored</span>`);
+updateStats();
+}
+
+function addCustomDoc(){document.getElementById('customDocRow').style.display='flex'}
+function submitCustom(){
+const content=document.getElementById('customContent').value;
+const vec=document.getElementById('customVec').value.split(',').map(Number);
+if(vec.length!==dim){alert(`Need ${dim} dimensions`);return}
+docs.push({content,vec,category:'custom',year:2025});
+log('indexLog',`<span class="cmd">HSET</span> doc:${docs.length-1} content "${content.slice(0,40)}..." embedding [${vec}]`);
+updateStats();
+}
+
+function cosine(a,b){
+let dot=0,na=0,nb=0;
+for(let i=0;i<a.length;i++){dot+=a[i]*b[i];na+=a[i]*a[i];nb+=b[i]*b[i]}
+return 1-(dot/(Math.sqrt(na)*Math.sqrt(nb)));
+}
+
+function vizVec(vec,elId){
+const el=document.getElementById(elId);
+el.innerHTML='';
+vec.forEach(v=>{const b=document.createElement('div');b.className='bar';b.style.height=Math.max(2,Math.abs(v)*40)+'px';b.style.opacity=.3+Math.abs(v)*.7;el.appendChild(b)});
+}
+
+function knnSearch(){
+const vecStr=document.getElementById('queryVec').value;
+const vec=vecStr.split(',').map(Number);
+if(vec.length!==dim){alert(`Need ${dim} dimensions`);return}
+const k=+document.getElementById('kSelect').value;
+vizVec(vec,'queryViz');
+queries++;
+
+const scored=docs.map((d,i)=>({...d,idx:i,score:cosine(vec,d.vec)})).sort((a,b)=>a.score-b.score).slice(0,k);
+
+log('cmdLog',`<span class="cmd">FT.SEARCH</span> vec_idx "*=>[KNN ${k} @embedding $query_vec]" PARAMS 2 query_vec [${vec}] DIALECT 2 → <span class="result">${scored.length} results</span>`);
+
+const el=document.getElementById('searchResults');
+el.innerHTML=`<p style="font-size:12px;color:var(--t3);margin-bottom:8px">${scored.length} results (lower score = more similar):</p>`;
+scored.forEach(d=>{
+const pct=Math.max(0,Math.min(100,(1-d.score)*100));
+el.innerHTML+=`<div class="result-card"><div class="title">doc:${d.idx}</div><div>${d.content}</div><div class="meta"><span class="score">Score: ${d.score.toFixed(4)}</span> · ${d.category} · ${d.year}</div><div class="score-bar"><div class="score-fill" style="width:${pct}%"></div></div></div>`;
+});
+updateStats();
+}
+
+function hybridSearch(){
+const vecStr=document.getElementById('queryVec').value;
+const vec=vecStr.split(',').map(Number);
+if(vec.length!==dim){alert(`Need ${dim} dimensions`);return}
+const k=+document.getElementById('kSelect').value;
+const filter=document.getElementById('filterSelect').value;
+vizVec(vec,'queryViz');
+queries++;
+
+let filtered=docs;
+let filterExpr='*';
+if(filter==='tech'||filter==='food'){filtered=docs.filter(d=>d.category===filter);filterExpr=`@category:{${filter}}`}
+else if(filter==='2024'){filtered=docs.filter(d=>d.year>=2024);filterExpr='@year:[2024 +inf]'}
+
+const scored=filtered.map((d,i)=>({...d,idx:docs.indexOf(d),score:cosine(vec,d.vec)})).sort((a,b)=>a.score-b.score).slice(0,k);
+
+log('cmdLog',`<span class="cmd">FT.SEARCH</span> vec_idx "${filterExpr}=>[KNN ${k} @embedding $vec]" → <span class="result">${scored.length} results</span>`);
+
+const el=document.getElementById('searchResults');
+el.innerHTML=`<p style="font-size:12px;color:var(--t3);margin-bottom:8px">${scored.length} results (filter: ${filterExpr}):</p>`;
+scored.forEach(d=>{
+const pct=Math.max(0,Math.min(100,(1-d.score)*100));
+el.innerHTML+=`<div class="result-card"><div class="title">doc:${d.idx}</div><div>${d.content}</div><div class="meta"><span class="score">Score: ${d.score.toFixed(4)}</span> · ${d.category} · ${d.year}</div><div class="score-bar"><div class="score-fill" style="width:${pct}%"></div></div></div>`;
+});
+updateStats();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>02 — Semantic Search with Embeddings — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/vector-search/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div></div></nav>
+<article>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/vector-search/">Vector Search</a> → 02 Semantic Search</div>
+<div class="meta"><span class="diff-medium">Intermediate</span><span class="lang">Python</span><span class="lang">~20 min</span></div>
+<h1>Semantic Search with <span class="gradient">Embeddings</span></h1>
+<p class="lead">Build a real semantic search engine using OpenAI embeddings and valkey-search. Store documents, embed queries, and find results by meaning — not keywords.</p>
+
+<h2>The Architecture</h2>
+<pre><code><span class="comment"># 1. Embed documents with OpenAI → store in Valkey</span>
+<span class="comment"># 2. User query → embed query → FT.SEARCH KNN → return matches</span>
+<span class="comment">#</span>
+<span class="comment">#  Document → OpenAI embed → HSET doc:1 embedding [binary] content "..."</span>
+<span class="comment">#  Query    → OpenAI embed → FT.SEARCH idx "*=>[KNN 5 @embedding $vec]"</span></code></pre>
+
+<h2>Step 1: Setup</h2>
+<pre><code>pip install redis openai numpy</code></pre>
+<pre><code><span class="keyword">import</span> redis
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+<span class="keyword">from</span> openai <span class="keyword">import</span> OpenAI
+
+client = redis.Redis(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>)
+openai_client = OpenAI()  <span class="comment"># Uses OPENAI_API_KEY env var</span>
+
+EMBEDDING_MODEL = <span class="string">"text-embedding-3-small"</span>
+EMBEDDING_DIM = <span class="num">1536</span>  <span class="comment"># text-embedding-3-small outputs 1536 dimensions</span></code></pre>
+
+<h2>Step 2: Create Index for 1536-dim Vectors</h2>
+<pre><code><span class="keyword">try</span>:
+    client.execute_command(
+        <span class="string">"FT.CREATE"</span>, <span class="string">"semantic_idx"</span>,
+        <span class="string">"SCHEMA"</span>,
+        <span class="string">"content"</span>, <span class="string">"TEXT"</span>,
+        <span class="string">"embedding"</span>, <span class="string">"VECTOR"</span>, <span class="string">"HNSW"</span>, <span class="string">"6"</span>,
+        <span class="string">"TYPE"</span>, <span class="string">"FLOAT32"</span>,
+        <span class="string">"DIM"</span>, <span class="func">str</span>(EMBEDDING_DIM),
+        <span class="string">"DISTANCE_METRIC"</span>, <span class="string">"COSINE"</span>,
+    )
+    <span class="func">print</span>(<span class="string">"Index created"</span>)
+<span class="keyword">except</span> redis.ResponseError:
+    <span class="func">print</span>(<span class="string">"Index already exists"</span>)</code></pre>
+
+<h2>Step 3: Embed and Store Documents</h2>
+<pre><code><span class="keyword">def</span> <span class="func">get_embedding</span>(text: str) -> bytes:
+    <span class="string">"""Get embedding from OpenAI and return as binary FLOAT32."""</span>
+    response = openai_client.embeddings.create(
+        model=EMBEDDING_MODEL,
+        input=text,
+    )
+    vec = response.data[<span class="num">0</span>].embedding  <span class="comment"># list of 1536 floats</span>
+    <span class="keyword">return</span> np.array(vec, dtype=np.float32).tobytes()
+
+<span class="comment"># Sample documents</span>
+docs = [
+    <span class="string">"Valkey is an open-source in-memory data store forked from Redis"</span>,
+    <span class="string">"Vector similarity search finds documents by semantic meaning"</span>,
+    <span class="string">"Machine learning models convert text into numerical embeddings"</span>,
+    <span class="string">"Python is the most popular language for AI development"</span>,
+    <span class="string">"HNSW algorithm provides fast approximate nearest neighbor search"</span>,
+    <span class="string">"Kubernetes orchestrates containerized applications at scale"</span>,
+    <span class="string">"LLMs like GPT-4 generate human-like text responses"</span>,
+    <span class="string">"Rate limiting protects APIs from excessive usage"</span>,
+]
+
+<span class="comment"># Embed and store each document</span>
+<span class="keyword">for</span> i, text <span class="keyword">in</span> <span class="func">enumerate</span>(docs):
+    embedding_bytes = get_embedding(text)
+    client.hset(<span class="string">f"doc:{i}"</span>, mapping={
+        <span class="string">"content"</span>: text,
+        <span class="string">"embedding"</span>: embedding_bytes,
+    })
+    <span class="func">print</span>(<span class="string">f"Stored doc:{i}: {text[:50]}..."</span>)
+
+<span class="func">print</span>(<span class="string">f"\nStored {len(docs)} documents with embeddings"</span>)</code></pre>
+
+<h2>Step 4: Search by Meaning</h2>
+<pre><code><span class="keyword">def</span> <span class="func">semantic_search</span>(query: str, k: int = <span class="num">3</span>):
+    <span class="string">"""Search for documents semantically similar to the query."""</span>
+
+    <span class="comment"># Embed the query</span>
+    query_vec = get_embedding(query)
+
+    <span class="comment"># KNN search</span>
+    results = client.execute_command(
+        <span class="string">"FT.SEARCH"</span>, <span class="string">"semantic_idx"</span>,
+        <span class="string">f"*=>[KNN {k} @embedding $query_vec]"</span>,
+        <span class="string">"PARAMS"</span>, <span class="string">"2"</span>, <span class="string">"query_vec"</span>, query_vec,
+        <span class="string">"DIALECT"</span>, <span class="string">"2"</span>,
+    )
+
+    <span class="comment"># Parse results</span>
+    matches = []
+    <span class="keyword">for</span> i <span class="keyword">in</span> <span class="func">range</span>(<span class="num">1</span>, <span class="func">len</span>(results), <span class="num">2</span>):
+        doc_key = results[i]
+        fields = results[i + <span class="num">1</span>]
+        field_dict = {fields[j]: fields[j+<span class="num">1</span>] <span class="keyword">for</span> j <span class="keyword">in</span> <span class="func">range</span>(<span class="num">0</span>, <span class="func">len</span>(fields), <span class="num">2</span>)}
+        matches.append({
+            <span class="string">"key"</span>: doc_key,
+            <span class="string">"content"</span>: field_dict.get(<span class="string">"content"</span>, <span class="string">""</span>),
+            <span class="string">"score"</span>: field_dict.get(<span class="string">"__embedding_score"</span>, <span class="string">"N/A"</span>),
+        })
+    <span class="keyword">return</span> matches
+
+<span class="comment"># Try different queries</span>
+queries = [
+    <span class="string">"What is Valkey?"</span>,
+    <span class="string">"How do I find similar documents?"</span>,
+    <span class="string">"Tell me about large language models"</span>,
+]
+
+<span class="keyword">for</span> q <span class="keyword">in</span> queries:
+    <span class="func">print</span>(<span class="string">f"\nQuery: '{q}'"</span>)
+    <span class="keyword">for</span> m <span class="keyword">in</span> semantic_search(q, k=<span class="num">2</span>):
+        <span class="func">print</span>(<span class="string">f"  → {m['content']} (score: {m['score']})"</span>)</code></pre>
+
+<p><strong>Expected output:</strong></p>
+<pre><code>Query: 'What is Valkey?'
+  → Valkey is an open-source in-memory data store forked from Redis (score: 0.15)
+  → Vector similarity search finds documents by semantic meaning (score: 0.42)
+
+Query: 'How do I find similar documents?'
+  → Vector similarity search finds documents by semantic meaning (score: 0.18)
+  → HNSW algorithm provides fast approximate nearest neighbor search (score: 0.35)
+
+Query: 'Tell me about large language models'
+  → LLMs like GPT-4 generate human-like text responses (score: 0.12)
+  → Machine learning models convert text into numerical embeddings (score: 0.28)</code></pre>
+
+<h2>Distance Metrics</h2>
+<table>
+<tr><th>Metric</th><th>Best For</th><th>Range</th><th>Lower = Better?</th></tr>
+<tr><td><code>COSINE</code></td><td>Normalized embeddings (OpenAI, etc.)</td><td>0 to 2</td><td>Yes</td></tr>
+<tr><td><code>L2</code></td><td>Euclidean distance</td><td>0 to ∞</td><td>Yes</td></tr>
+<tr><td><code>IP</code></td><td>Inner product (dot product)</td><td>-∞ to ∞</td><td>No (higher = more similar)</td></tr>
+</table>
+
+<div class="callout">
+<p><strong>Use COSINE for OpenAI embeddings.</strong> OpenAI's embeddings are normalized, so cosine similarity is the correct metric. A score of 0 = identical, 2 = opposite.</p>
+</div>
+
+<div class="nav-prev-next">
+<a href="01-getting-started.html" class="prev"><span class="label">← Previous</span><span class="title">01 — Getting Started</span></a>
+<a href="03-hybrid-search.html" class="next"><span class="label">Next →</span><span class="title">03 — Hybrid Search</span></a>
+</div>
+</article></body></html>
