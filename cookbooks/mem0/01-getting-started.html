@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>01 — Getting Started with Mem0 + Valkey — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
+<article>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/mem0/">Mem0</a> → 01 Getting Started</div>
+<div class="meta"><span class="diff-easy">Beginner</span><span class="lang">Python</span><span class="lang">~15 min</span></div>
+<h1>Getting Started with <span class="gradient">Mem0 + Valkey</span></h1>
+<p class="lead">Give your AI agents persistent, intelligent memory backed by Valkey. Mem0 provides a memory layer that remembers user preferences, adapts to individual needs, and continuously learns — with Valkey as the native vector store.</p>
+
+<h2>What is Mem0?</h2>
+<p><a href="https://github.com/mem0ai/mem0" target="_blank" style="color:var(--accent)">Mem0</a> ("mem-zero") is an open-source memory layer for AI applications (YC S24). It has a <strong>dedicated Valkey connector</strong> (<code>provider: "valkey"</code>) that uses the <code>valkey</code> Python client with native <code>FT.CREATE</code>/<code>FT.SEARCH</code> for vector-based memory storage and retrieval.</p>
+
+<div class="callout">
+<p><strong>Mem0 has a first-class Valkey integration</strong> — not just Redis compatibility. The <code>valkey.py</code> connector in Mem0's source uses the native <code>valkey</code> Python package and supports HNSW/FLAT indexing with configurable parameters.</p>
+</div>
+
+<h2>Step 1: Install</h2>
+<pre><code>pip install mem0ai</code></pre>
+<p>The <code>valkey</code> Python client is included as a core dependency — no separate install needed.</p>
+
+<h2>Step 2: Start Valkey with Search Module</h2>
+<pre><code><span class="comment"># Valkey with valkey-search module loaded</span>
+valkey-server --loadmodule /path/to/libsearch.so</code></pre>
+
+<h2>Step 3: Configure Mem0 with Valkey</h2>
+<pre><code><span class="keyword">from</span> mem0 <span class="keyword">import</span> Memory
+
+config = {
+    <span class="string">"vector_store"</span>: {
+        <span class="string">"provider"</span>: <span class="string">"valkey"</span>,
+        <span class="string">"config"</span>: {
+            <span class="string">"valkey_url"</span>: <span class="string">"valkey://localhost:6379"</span>,
+            <span class="string">"collection_name"</span>: <span class="string">"mem0"</span>,
+            <span class="string">"embedding_model_dims"</span>: <span class="num">1536</span>,
+            <span class="string">"index_type"</span>: <span class="string">"hnsw"</span>,
+        }
+    }
+}
+
+memory = Memory.from_config(config)
+<span class="func">print</span>(<span class="string">"Mem0 connected to Valkey!"</span>)</code></pre>
+
+<h2>Step 4: Add Memories</h2>
+<pre><code><span class="comment"># Add memories from a conversation</span>
+messages = [
+    {<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"I love Italian food, especially pasta carbonara."</span>},
+    {<span class="string">"role"</span>: <span class="string">"assistant"</span>, <span class="string">"content"</span>: <span class="string">"Great choice! Carbonara is a classic Roman dish."</span>},
+]
+result = memory.add(messages, user_id=<span class="string">"user_001"</span>)
+<span class="func">print</span>(<span class="string">f"Added: {result}"</span>)
+
+<span class="comment"># Add more context</span>
+messages2 = [
+    {<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"I'm allergic to shellfish and prefer spicy food."</span>},
+    {<span class="string">"role"</span>: <span class="string">"assistant"</span>, <span class="string">"content"</span>: <span class="string">"Noted! I'll keep that in mind for recommendations."</span>},
+]
+memory.add(messages2, user_id=<span class="string">"user_001"</span>)</code></pre>
+
+<h2>Step 5: Search Memories</h2>
+<pre><code><span class="comment"># Search for relevant memories</span>
+results = memory.search(
+    query=<span class="string">"What food does this user like?"</span>,
+    user_id=<span class="string">"user_001"</span>,
+    limit=<span class="num">3</span>,
+)
+
+<span class="keyword">for</span> entry <span class="keyword">in</span> results[<span class="string">"results"</span>]:
+    <span class="func">print</span>(<span class="string">f"Memory: {entry['memory']}"</span>)
+    <span class="func">print</span>(<span class="string">f"Score: {entry.get('score', 'N/A')}\n"</span>)
+
+<span class="comment"># Output:</span>
+<span class="comment"># Memory: Loves Italian food, especially pasta carbonara</span>
+<span class="comment"># Score: 0.87</span>
+<span class="comment"># Memory: Allergic to shellfish, prefers spicy food</span>
+<span class="comment"># Score: 0.62</span></code></pre>
+
+<h2>Step 6: Get All Memories for a User</h2>
+<pre><code><span class="comment"># Retrieve all memories for a user</span>
+all_memories = memory.get_all(user_id=<span class="string">"user_001"</span>)
+<span class="keyword">for</span> m <span class="keyword">in</span> all_memories[<span class="string">"results"</span>]:
+    <span class="func">print</span>(<span class="string">f"  - {m['memory']}"</span>)</code></pre>
+
+<h2>Step 7: Use Memories in a Chatbot</h2>
+<pre><code><span class="keyword">from</span> openai <span class="keyword">import</span> OpenAI
+
+openai_client = OpenAI()
+
+<span class="keyword">def</span> <span class="func">chat_with_memory</span>(message: str, user_id: str) -> str:
+    <span class="comment"># 1. Retrieve relevant memories</span>
+    relevant = memory.search(query=message, user_id=user_id, limit=<span class="num">3</span>)
+    memories_str = <span class="string">"\n"</span>.join(
+        <span class="string">f"- {entry['memory']}"</span> <span class="keyword">for</span> entry <span class="keyword">in</span> relevant[<span class="string">"results"</span>]
+    )
+
+    <span class="comment"># 2. Build prompt with memories</span>
+    system = <span class="string">f"You are a helpful AI. Use these memories about the user:\n{memories_str}"</span>
+    messages = [
+        {<span class="string">"role"</span>: <span class="string">"system"</span>, <span class="string">"content"</span>: system},
+        {<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: message},
+    ]
+
+    <span class="comment"># 3. Generate response</span>
+    response = openai_client.chat.completions.create(
+        model=<span class="string">"gpt-4"</span>, messages=messages,
+    )
+    answer = response.choices[<span class="num">0</span>].message.content
+
+    <span class="comment"># 4. Save new memories from this conversation</span>
+    memory.add(
+        [{<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: message},
+         {<span class="string">"role"</span>: <span class="string">"assistant"</span>, <span class="string">"content"</span>: answer}],
+        user_id=user_id,
+    )
+    <span class="keyword">return</span> answer
+
+<span class="comment"># Usage</span>
+response = chat_with_memory(<span class="string">"Recommend me a restaurant"</span>, <span class="string">"user_001"</span>)
+<span class="func">print</span>(response)
+<span class="comment"># Will recommend Italian restaurants, avoid shellfish, suggest spicy options!</span></code></pre>
+
+<h2>How It Works Under the Hood</h2>
+<table>
+<tr><th>Operation</th><th>Mem0 API</th><th>Valkey Command</th></tr>
+<tr><td>Add memory</td><td><code>memory.add(messages, user_id)</code></td><td><code>HSET mem0:collection:id ...</code></td></tr>
+<tr><td>Search</td><td><code>memory.search(query, user_id)</code></td><td><code>FT.SEARCH</code> with KNN + TAG filter</td></tr>
+<tr><td>Get all</td><td><code>memory.get_all(user_id)</code></td><td><code>FT.SEARCH @user_id:{id} *</code></td></tr>
+<tr><td>Index creation</td><td>Automatic on init</td><td><code>FT.CREATE</code> with HNSW + TAG fields</td></tr>
+</table>
+
+<div class="callout">
+<p><strong>Source:</strong> <a href="https://github.com/mem0ai/mem0/blob/main/mem0/vector_stores/valkey.py" target="_blank" style="color:var(--accent)">mem0/vector_stores/valkey.py</a> — The official Valkey connector in the Mem0 repository.</p>
+</div>
+
+<div class="nav-prev-next">
+<div></div>
+<a href="02-multi-user-memory.html" class="next"><span class="label">Next →</span><span class="title">02 — Multi-User Memory</span></a>
+</div>
+</article></body></html>

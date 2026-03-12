@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>03 — Production with ElastiCache — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
+<article>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/mem0/">Mem0</a> → 03 Production</div>
+<div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~20 min</span></div>
+<h1>Production with <span class="gradient">ElastiCache</span></h1>
+<p class="lead">Deploy Mem0 with Amazon ElastiCache for Valkey in production. Configure HNSW parameters, tune for scale, and run a durable memory layer for your AI agents.</p>
+
+<h2>Step 1: ElastiCache for Valkey 8.2+</h2>
+<p>ElastiCache for Valkey 8.2 includes built-in vector search at no additional cost. Create a cluster via the AWS Console or CLI, then use the cluster endpoint as your Valkey URL.</p>
+<pre><code><span class="keyword">from</span> mem0 <span class="keyword">import</span> Memory
+
+config = {
+    <span class="string">"vector_store"</span>: {
+        <span class="string">"provider"</span>: <span class="string">"valkey"</span>,
+        <span class="string">"config"</span>: {
+            <span class="comment"># Use your ElastiCache cluster endpoint</span>
+            <span class="string">"valkey_url"</span>: <span class="string">"valkey://your-cluster.xxxxx.use1.cache.amazonaws.com:6379"</span>,
+            <span class="string">"collection_name"</span>: <span class="string">"prod_memories"</span>,
+            <span class="string">"embedding_model_dims"</span>: <span class="num">1536</span>,
+            <span class="string">"index_type"</span>: <span class="string">"hnsw"</span>,
+            <span class="comment"># HNSW tuning parameters</span>
+            <span class="string">"hnsw_m"</span>: <span class="num">16</span>,              <span class="comment"># connections per node</span>
+            <span class="string">"hnsw_ef_construction"</span>: <span class="num">200</span>, <span class="comment"># build-time search width</span>
+            <span class="string">"hnsw_ef_runtime"</span>: <span class="num">10</span>,      <span class="comment"># query-time search width</span>
+        }
+    }
+}
+memory = Memory.from_config(config)</code></pre>
+
+<h2>Step 2: HNSW Parameter Tuning</h2>
+<table>
+<tr><th>Parameter</th><th>Default</th><th>Effect</th><th>Recommendation</th></tr>
+<tr><td><code>hnsw_m</code></td><td>16</td><td>More connections = higher recall, more memory</td><td>16 for most cases, 32 for >1M memories</td></tr>
+<tr><td><code>hnsw_ef_construction</code></td><td>200</td><td>Higher = better index quality, slower build</td><td>200 default, increase to 400 for critical apps</td></tr>
+<tr><td><code>hnsw_ef_runtime</code></td><td>10</td><td>Higher = better recall, higher latency</td><td>10 for speed, 50+ for maximum recall</td></tr>
+<tr><td><code>index_type</code></td><td>hnsw</td><td>HNSW=fast approximate, FLAT=exact</td><td>HNSW for &gt;1000 memories, FLAT for small sets</td></tr>
+</table>
+
+<h2>Step 3: TLS for ElastiCache</h2>
+<pre><code><span class="comment"># ElastiCache with TLS enabled</span>
+config = {
+    <span class="string">"vector_store"</span>: {
+        <span class="string">"provider"</span>: <span class="string">"valkey"</span>,
+        <span class="string">"config"</span>: {
+            <span class="string">"valkey_url"</span>: <span class="string">"valkeys://your-cluster.xxxxx.use1.cache.amazonaws.com:6379"</span>,
+            <span class="comment"># Note: valkeys:// (with 's') enables TLS</span>
+            <span class="string">"collection_name"</span>: <span class="string">"prod_memories"</span>,
+            <span class="string">"embedding_model_dims"</span>: <span class="num">1536</span>,
+        }
+    }
+}</code></pre>
+
+<h2>Step 4: Monitoring</h2>
+<pre><code><span class="keyword">import</span> valkey
+
+<span class="comment"># Connect directly to check index health</span>
+client = valkey.from_url(<span class="string">"valkey://your-cluster:6379"</span>)
+
+<span class="comment"># Check index info</span>
+info = client.execute_command(<span class="string">"FT.INFO"</span>, <span class="string">"prod_memories"</span>)
+<span class="func">print</span>(info)
+
+<span class="comment"># Check memory usage</span>
+mem_info = client.info(<span class="string">"memory"</span>)
+<span class="func">print</span>(<span class="string">f"Used: {mem_info['used_memory_human']}"</span>)
+
+<span class="comment"># Count memories per user</span>
+results = client.execute_command(
+    <span class="string">"FT.SEARCH"</span>, <span class="string">"prod_memories"</span>,
+    <span class="string">"@user_id:{alice}"</span>,
+    <span class="string">"LIMIT"</span>, <span class="string">"0"</span>, <span class="string">"0"</span>,  <span class="comment"># count only</span>
+)
+<span class="func">print</span>(<span class="string">f"Alice has {results[0]} memories"</span>)</code></pre>
+
+<h2>Production Checklist</h2>
+<table>
+<tr><th>Area</th><th>Recommendation</th></tr>
+<tr><td>ElastiCache</td><td>Use Valkey 8.2+ for built-in vector search</td></tr>
+<tr><td>TLS</td><td>Use <code>valkeys://</code> URL scheme for encrypted connections</td></tr>
+<tr><td>Multi-AZ</td><td>Enable for high availability</td></tr>
+<tr><td>HNSW M</td><td>16 default, 32 for large memory stores</td></tr>
+<tr><td>Embedding model</td><td>text-embedding-3-small (1536 dims, fast, cheap)</td></tr>
+<tr><td>Memory limits</td><td>Use maxmemory-policy to handle full memory</td></tr>
+<tr><td>Monitoring</td><td>Track FT.INFO for index size + memory usage</td></tr>
+</table>
+
+<div class="callout">
+<p><strong>Source:</strong> Mem0's Valkey connector: <a href="https://github.com/mem0ai/mem0/blob/main/mem0/vector_stores/valkey.py" target="_blank" style="color:var(--accent)">valkey.py</a> and config: <a href="https://github.com/mem0ai/mem0/blob/main/mem0/configs/vector_stores/valkey.py" target="_blank" style="color:var(--accent)">ValkeyConfig</a></p>
+</div>
+
+<div class="nav-prev-next">
+<a href="02-multi-user-memory.html" class="prev"><span class="label">← Previous</span><span class="title">02 — Multi-User Memory</span></a>
+<a href="/cookbooks/mem0/" class="next"><span class="label">Back to →</span><span class="title">Mem0 Cookbooks</span></a>
+</div>
+</article></body></html>

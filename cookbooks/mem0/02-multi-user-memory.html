@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>02 — Multi-User Memory — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../cookbook.css">
+</head>
+<body>
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
+<article>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/mem0/">Mem0</a> → 02 Multi-User Memory</div>
+<div class="meta"><span class="diff-medium">Intermediate</span><span class="lang">Python</span><span class="lang">~20 min</span></div>
+<h1>Multi-User <span class="gradient">Memory</span></h1>
+<p class="lead">Isolate memories per user, agent, and session. Build a personalized AI assistant where each user has their own memory space — all backed by Valkey.</p>
+
+<h2>Memory Isolation</h2>
+<p>Mem0 supports three levels of memory isolation via TAG fields in Valkey:</p>
+<table>
+<tr><th>Level</th><th>Parameter</th><th>Use Case</th></tr>
+<tr><td>User</td><td><code>user_id</code></td><td>Per-user preferences across all sessions</td></tr>
+<tr><td>Agent</td><td><code>agent_id</code></td><td>Per-agent knowledge (e.g., support bot vs sales bot)</td></tr>
+<tr><td>Session</td><td><code>run_id</code></td><td>Per-conversation context (ephemeral)</td></tr>
+</table>
+
+<h2>Step 1: Setup</h2>
+<pre><code><span class="keyword">from</span> mem0 <span class="keyword">import</span> Memory
+
+config = {
+    <span class="string">"vector_store"</span>: {
+        <span class="string">"provider"</span>: <span class="string">"valkey"</span>,
+        <span class="string">"config"</span>: {
+            <span class="string">"valkey_url"</span>: <span class="string">"valkey://localhost:6379"</span>,
+            <span class="string">"collection_name"</span>: <span class="string">"multi_user_app"</span>,
+            <span class="string">"embedding_model_dims"</span>: <span class="num">1536</span>,
+        }
+    }
+}
+memory = Memory.from_config(config)</code></pre>
+
+<h2>Step 2: Per-User Memories</h2>
+<pre><code><span class="comment"># User Alice</span>
+memory.add(
+    [{<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"I prefer dark mode and Python."</span>}],
+    user_id=<span class="string">"alice"</span>,
+)
+
+<span class="comment"># User Bob</span>
+memory.add(
+    [{<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"I use TypeScript and like light mode."</span>}],
+    user_id=<span class="string">"bob"</span>,
+)
+
+<span class="comment"># Search for Alice — only gets Alice's memories</span>
+alice_results = memory.search(<span class="string">"What are the user preferences?"</span>, user_id=<span class="string">"alice"</span>)
+<span class="func">print</span>(<span class="string">"Alice:"</span>, [r[<span class="string">"memory"</span>] <span class="keyword">for</span> r <span class="keyword">in</span> alice_results[<span class="string">"results"</span>]])
+<span class="comment"># Alice: ['Prefers dark mode and Python']</span>
+
+<span class="comment"># Search for Bob — only gets Bob's memories</span>
+bob_results = memory.search(<span class="string">"What are the user preferences?"</span>, user_id=<span class="string">"bob"</span>)
+<span class="func">print</span>(<span class="string">"Bob:"</span>, [r[<span class="string">"memory"</span>] <span class="keyword">for</span> r <span class="keyword">in</span> bob_results[<span class="string">"results"</span>]])
+<span class="comment"># Bob: ['Uses TypeScript and likes light mode']</span></code></pre>
+
+<div class="callout">
+<p><strong>How isolation works:</strong> In Valkey, each memory is stored as a Hash with a <code>user_id</code> TAG field. When you search with <code>user_id="alice"</code>, Mem0 adds a TAG filter <code>@user_id:{alice}</code> to the <code>FT.SEARCH</code> query — ensuring Bob's memories are never returned.</p>
+</div>
+
+<h2>Step 3: Per-Agent Memories</h2>
+<pre><code><span class="comment"># Support agent knowledge</span>
+memory.add(
+    [{<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"Our refund policy is 30 days for unused items."</span>}],
+    agent_id=<span class="string">"support_bot"</span>,
+)
+
+<span class="comment"># Sales agent knowledge</span>
+memory.add(
+    [{<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"Current promotion: 20% off all premium plans."</span>}],
+    agent_id=<span class="string">"sales_bot"</span>,
+)
+
+<span class="comment"># Each agent only sees its own knowledge</span>
+support_results = memory.search(<span class="string">"What is the refund policy?"</span>, agent_id=<span class="string">"support_bot"</span>)
+sales_results = memory.search(<span class="string">"Any promotions?"</span>, agent_id=<span class="string">"sales_bot"</span>)</code></pre>
+
+<h2>Step 4: Combined User + Agent</h2>
+<pre><code><span class="comment"># Add a memory scoped to both user AND agent</span>
+memory.add(
+    [{<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"I had an issue with order #12345."</span>}],
+    user_id=<span class="string">"alice"</span>,
+    agent_id=<span class="string">"support_bot"</span>,
+)
+
+<span class="comment"># Search: finds Alice's support interactions only</span>
+results = memory.search(
+    <span class="string">"Previous issues"</span>,
+    user_id=<span class="string">"alice"</span>,
+    agent_id=<span class="string">"support_bot"</span>,
+)</code></pre>
+
+<h2>Valkey Data Model</h2>
+<pre><code><span class="comment"># Each memory is stored as a Valkey Hash at:</span>
+<span class="comment">#   mem0:multi_user_app:{memory_id}</span>
+<span class="comment">#</span>
+<span class="comment"># Fields:</span>
+<span class="comment">#   memory_id: TAG</span>
+<span class="comment">#   user_id: TAG      ← enables per-user filtering</span>
+<span class="comment">#   agent_id: TAG     ← enables per-agent filtering</span>
+<span class="comment">#   run_id: TAG       ← enables per-session filtering</span>
+<span class="comment">#   memory: TAG       ← the extracted memory text</span>
+<span class="comment">#   embedding: VECTOR ← HNSW FLOAT32 COSINE</span>
+<span class="comment">#   created_at: NUMERIC</span>
+<span class="comment">#   updated_at: NUMERIC</span></code></pre>
+
+<div class="nav-prev-next">
+<a href="01-getting-started.html" class="prev"><span class="label">← Previous</span><span class="title">01 — Getting Started</span></a>
+<a href="03-production.html" class="next"><span class="label">Next →</span><span class="title">03 — Production with ElastiCache</span></a>
+</div>
+</article></body></html>
