@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mem0 + Valkey Interactive Demo — Valkey for AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0a;--card:rgba(255,255,255,.04);--brd:rgba(255,255,255,.08);--t1:#f5f5f7;--t2:rgba(245,245,247,.6);--t3:rgba(245,245,247,.4);--accent:#a855f7;--accent2:#6366f1;--radius:12px;--font:'Inter',system-ui,sans-serif}
+body{font-family:var(--font);background:var(--bg);color:var(--t1);line-height:1.5;padding:24px;max-width:1100px;margin:0 auto}
+h1{font-size:28px;font-weight:900;letter-spacing:-.03em;margin-bottom:4px}
+h1 span{color:var(--accent)}
+.subtitle{font-size:14px;color:var(--t2);margin-bottom:20px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+@media(max-width:768px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--brd);border-radius:var(--radius);overflow:hidden}
+.panel-header{padding:12px 16px;border-bottom:1px solid var(--brd);display:flex;align-items:center;justify-content:space-between}
+.panel-header h3{font-size:14px;font-weight:700}
+.panel-body{padding:14px 16px}
+.stat-row{display:flex;gap:12px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--brd);border-radius:var(--radius);padding:12px 16px;flex:1;text-align:center}
+.stat .num{font-size:26px;font-weight:900;color:var(--accent)}
+.stat .label{font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.05em}
+.user-tabs{display:flex;gap:4px;margin-bottom:12px;background:rgba(255,255,255,.03);border-radius:8px;padding:3px}
+.user-tab{padding:6px 16px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;color:var(--t2);transition:.2s}
+.user-tab.active{background:var(--accent);color:#fff}
+.chat-area{min-height:200px;max-height:300px;overflow-y:auto;margin-bottom:12px;padding:8px;background:rgba(0,0,0,.2);border-radius:8px}
+.chat-msg{margin-bottom:8px;padding:8px 12px;border-radius:8px;font-size:13px;max-width:85%}
+.chat-msg.user{background:rgba(168,85,247,.15);margin-left:auto;border-bottom-right-radius:2px}
+.chat-msg.assistant{background:rgba(255,255,255,.06);border-bottom-left-radius:2px}
+.chat-msg .role{font-size:10px;font-weight:700;color:var(--t3);margin-bottom:2px;text-transform:uppercase}
+.chat-input{display:flex;gap:8px}
+.chat-input input{flex:1;background:rgba(255,255,255,.06);border:1px solid var(--brd);border-radius:8px;padding:10px 14px;color:var(--t1);font-family:var(--font);font-size:13px;outline:none}
+.chat-input input:focus{border-color:var(--accent)}
+.chat-input input::placeholder{color:var(--t3)}
+button{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;border-radius:8px;padding:10px 18px;font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;transition:.2s}
+button:hover{transform:translateY(-1px)}
+button.sm{padding:5px 12px;font-size:11px}
+button.secondary{background:rgba(255,255,255,.06);color:var(--t1);border:1px solid var(--brd)}
+.memory-card{background:rgba(168,85,247,.06);border:1px solid rgba(168,85,247,.15);border-radius:8px;padding:10px;margin-bottom:6px;font-size:12px}
+.memory-card .mem-text{margin-bottom:4px}
+.memory-card .mem-meta{font-size:10px;color:var(--t3)}
+.memory-card .score{color:#fbbf24;font-weight:600}
+.search-row{display:flex;gap:8px;margin-bottom:12px}
+.search-row input{flex:1;background:rgba(255,255,255,.06);border:1px solid var(--brd);border-radius:8px;padding:8px 12px;color:var(--t1);font-family:var(--font);font-size:12px;outline:none}
+.log{font-family:'SF Mono','Fira Code',monospace;font-size:11px;line-height:1.7;max-height:200px;overflow-y:auto;color:var(--t2)}
+.log .cmd{color:var(--accent);font-weight:600}
+.log .result{color:#a5f3fc}
+.mem-grid{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+.mem-block{width:28px;height:28px;border-radius:6px;background:rgba(168,85,247,.15);border:1px solid rgba(168,85,247,.25);display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:var(--accent);transition:.3s}
+.mem-block.hit{background:rgba(16,185,129,.2);border-color:rgba(16,185,129,.3);color:#10b981;transform:scale(1.1)}
+.quick-btns{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.quick-btns button{font-size:11px;padding:5px 12px;background:rgba(255,255,255,.05);border:1px solid var(--brd);color:var(--t2)}
+</style>
+</head>
+<body>
+<h1>Mem0 + <span>Valkey</span> Demo</h1>
+<p class="subtitle">Simulate Mem0's intelligent memory layer backed by Valkey. Chat as different users, see memories extracted and stored, search by meaning.</p>
+
+<div class="stat-row">
+<div class="stat"><div class="num" id="memCount">0</div><div class="label">Memories</div></div>
+<div class="stat"><div class="num" id="userCount">2</div><div class="label">Users</div></div>
+<div class="stat"><div class="num" id="searchCount">0</div><div class="label">Searches</div></div>
+<div class="stat"><div class="num" id="hitCount">0</div><div class="label">Relevant Hits</div></div>
+</div>
+
+<div class="grid">
+<!-- CHAT PANEL -->
+<div class="panel">
+<div class="panel-header"><h3>💬 Chat with Memory</h3></div>
+<div class="panel-body">
+<div class="user-tabs">
+<div class="user-tab active" onclick="switchUser('alice')">👩 Alice</div>
+<div class="user-tab" onclick="switchUser('bob')">👨 Bob</div>
+</div>
+<div class="quick-btns">
+<button class="secondary" onclick="quickChat('I love Italian food, especially carbonara')">🍝 Food pref</button>
+<button class="secondary" onclick="quickChat('I prefer Python and dark mode')">🐍 Code pref</button>
+<button class="secondary" onclick="quickChat('My budget is under $50 for gifts')">🎁 Budget</button>
+<button class="secondary" onclick="quickChat('I have a meeting on Friday at 3pm')">📅 Schedule</button>
+</div>
+<div class="chat-area" id="chatArea"></div>
+<div class="chat-input">
+<input id="chatInput" placeholder="Type a message..." onkeydown="if(event.key==='Enter')sendChat()">
+<button onclick="sendChat()">Send</button>
+</div>
+</div>
+</div>
+
+<!-- MEMORY PANEL -->
+<div class="panel">
+<div class="panel-header"><h3>🧠 Memories for <span id="memUser">alice</span></h3><button class="sm secondary" onclick="clearMemories()">Clear</button></div>
+<div class="panel-body">
+<div class="search-row">
+<input id="searchInput" placeholder="Search memories..." onkeydown="if(event.key==='Enter')searchMemories()">
+<button class="sm" onclick="searchMemories()">Search</button>
+</div>
+<div id="memoryList"><div style="color:var(--t3);font-size:13px">No memories yet. Start chatting to create some!</div></div>
+<div class="mem-grid" id="memGrid"></div>
+</div>
+</div>
+</div>
+
+<!-- COMMAND LOG -->
+<div class="panel">
+<div class="panel-header"><h3>📋 Valkey Commands</h3><button class="sm secondary" onclick="clearLog()">Clear</button></div>
+<div class="panel-body"><div class="log" id="cmdLog"><div style="color:var(--t3)">Commands will appear here as you interact...</div></div></div>
+</div>
+
+<script>
+let currentUser='alice',memories={alice:[],bob:[]},searches=0,hits=0,memId=0;
+const responses={
+"I love Italian food, especially carbonara":"That sounds delicious! Carbonara is such a classic Roman dish. I'll remember you love Italian food!",
+"I prefer Python and dark mode":"Great choices! Python is fantastic for AI development. Dark mode it is!",
+"My budget is under $50 for gifts":"Got it, I'll keep gift suggestions under $50 for you.",
+"I have a meeting on Friday at 3pm":"Noted! I'll remember your Friday 3pm meeting.",
+};
+const memoryExtract={
+"I love Italian food, especially carbonara":"Loves Italian food, especially pasta carbonara",
+"I prefer Python and dark mode":"Prefers Python programming language and dark mode UI",
+"My budget is under $50 for gifts":"Gift budget is under $50",
+"I have a meeting on Friday at 3pm":"Has a meeting scheduled on Friday at 3pm",
+};
+
+function switchUser(u){
+currentUser=u;
+document.querySelectorAll('.user-tab').forEach(t=>t.classList.remove('active'));
+event.target.classList.add('active');
+document.getElementById('memUser').textContent=u;
+renderChat();renderMemories();
+}
+
+function sendChat(){
+const input=document.getElementById('chatInput');
+const text=input.value.trim();
+if(!text)return;
+input.value='';
+addChatMsg(text,'user');
+const resp=responses[text]||"Thanks for sharing! I'll remember that for next time.";
+const mem=memoryExtract[text]||text.slice(0,60);
+setTimeout(()=>{addChatMsg(resp,'assistant');addMemory(mem,text)},300);
+}
+
+function quickChat(text){document.getElementById('chatInput').value=text;sendChat()}
+
+function addChatMsg(text,role){
+if(!memories[currentUser])memories[currentUser]=[];
+const area=document.getElementById('chatArea');
+const div=document.createElement('div');
+div.className='chat-msg '+role;
+div.innerHTML=`<div class="role">${role==='user'?currentUser:'assistant'}</div>${text}`;
+area.appendChild(div);
+area.scrollTop=area.scrollHeight;
+}
+
+function addMemory(memText,originalMsg){
+memId++;
+const entry={id:memId,memory:memText,original:originalMsg,user:currentUser,ts:new Date().toLocaleTimeString(),score:0};
+memories[currentUser].push(entry);
+log('cmd',`<span class="cmd">memory.add</span>([{role:"user", content:"${originalMsg.slice(0,40)}..."}], user_id="${currentUser}")`);
+log('cmd',`  → <span class="result">HSET mem0:memories:${memId}</span> memory "${memText}" user_id "${currentUser}" embedding [float32...]`);
+log('cmd',`  → <span class="result">FT.CREATE</span> auto-indexed via HNSW`);
+updateStats();renderMemories();
+}
+
+function searchMemories(){
+const query=document.getElementById('searchInput').value.trim();
+if(!query)return;
+searches++;
+const userMems=memories[currentUser]||[];
+const scored=userMems.map(m=>{
+const qWords=query.toLowerCase().split(/\s+/);
+const mWords=m.memory.toLowerCase().split(/\s+/);
+let overlap=0;
+for(const w of qWords)if(mWords.some(mw=>mw.includes(w)||w.includes(mw)))overlap++;
+return{...m,score:Math.min(0.95,overlap/Math.max(qWords.length,1)*0.8+Math.random()*0.15)};
+}).sort((a,b)=>b.score-a.score);
+
+log('cmd',`<span class="cmd">memory.search</span>(query="${query}", user_id="${currentUser}", limit=3)`);
+log('cmd',`  → <span class="result">FT.SEARCH</span> mem0_idx "@user_id:{${currentUser}}=>[KNN 3 @embedding $vec]"`);
+
+const el=document.getElementById('memoryList');
+if(scored.length===0){el.innerHTML='<div style="color:var(--t3)">No memories found.</div>';return}
+el.innerHTML='<div style="font-size:11px;color:var(--t3);margin-bottom:8px">Search results for "'+query+'":</div>';
+scored.slice(0,3).forEach(m=>{
+if(m.score>0.3)hits++;
+el.innerHTML+=`<div class="memory-card"><div class="mem-text">🧠 ${m.memory}</div><div class="mem-meta"><span class="score">Score: ${m.score.toFixed(2)}</span> · ${m.user} · ${m.ts}</div></div>`;
+highlightBlock(m.id);
+});
+log('cmd',`  → <span class="result">${Math.min(3,scored.length)} results</span> returned`);
+updateStats();
+}
+
+function highlightBlock(id){
+const blocks=document.querySelectorAll('.mem-block');
+blocks.forEach(b=>{if(b.dataset.id==id)b.classList.add('hit');});
+setTimeout(()=>blocks.forEach(b=>b.classList.remove('hit')),2000);
+}
+
+function renderChat(){
+document.getElementById('chatArea').innerHTML='';
+}
+
+function renderMemories(){
+const el=document.getElementById('memoryList');
+const grid=document.getElementById('memGrid');
+const mems=memories[currentUser]||[];
+if(mems.length===0){el.innerHTML='<div style="color:var(--t3);font-size:13px">No memories yet. Start chatting!</div>';grid.innerHTML='';return}
+el.innerHTML='';
+mems.forEach(m=>{
+el.innerHTML+=`<div class="memory-card"><div class="mem-text">🧠 ${m.memory}</div><div class="mem-meta">${m.user} · ${m.ts}</div></div>`;
+});
+grid.innerHTML='';
+mems.forEach(m=>{
+const d=document.createElement('div');
+d.className='mem-block';d.dataset.id=m.id;
+d.textContent=m.id;d.title=m.memory;
+grid.appendChild(d);
+});
+}
+
+function clearMemories(){memories[currentUser]=[];renderMemories();updateStats()}
+function clearLog(){document.getElementById('cmdLog').innerHTML=''}
+
+function log(type,html){
+const el=document.getElementById('cmdLog');
+const d=document.createElement('div');
+d.innerHTML=html;
+el.appendChild(d);
+el.scrollTop=el.scrollHeight;
+}
+
+function updateStats(){
+const total=Object.values(memories).reduce((s,m)=>s+m.length,0);
+document.getElementById('memCount').textContent=total;
+document.getElementById('searchCount').textContent=searches;
+document.getElementById('hitCount').textContent=hits;
+}
+</script>
+</body>
+</html>
