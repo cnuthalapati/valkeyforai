@@ -344,7 +344,7 @@ async function sendMessage() {
   log('<span class="strands">session_manager.create_message</span>(role=<span class="key">"user"</span>, ...)');
   log('<span class="valkey">SET</span> <span class="key">session:' + SESSION_ID + ':agent:' + AGENT_ID + ':message:' + userMsgId.slice(0,8) + '…</span>');
   log('<span class="strands">Agent</span>(session_manager=session_manager)(<span class="key">"' + msg.slice(0,40) + (msg.length > 40 ? '…' : '') + '"</span>)');
-  log('<span class="comment"># → Bedrock: us.anthropic.claude-sonnet-4-20250514-v1:0</span>');
+  log('<span class="comment"># → LLM: response generated</span>');
 
   addThinking();
   await sleep(1100);
