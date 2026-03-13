@@ -20,6 +20,35 @@
 <h1>Managing <span class="gradient">Session Data</span></h1>
 <p class="lead">Understand exactly what <code>strands-valkey-session-manager</code> stores in Valkey — the key structure, the shape of each object, and how to use the built-in API methods to inspect and manage session data.</p>
 
+<h2>Pick Up Where You Left Off</h2>
+<p>Create a new <code>Agent</code> with the same <code>session_id</code> — Strands reloads the full conversation history from Valkey automatically:</p>
+<pre><code><span class="keyword">import</span> valkey
+<span class="keyword">from</span> strands <span class="keyword">import</span> Agent
+<span class="keyword">from</span> strands_valkey_session_manager <span class="keyword">import</span> ValkeySessionManager
+
+<span class="comment"># In a new Python process — history is restored from Valkey</span>
+client = valkey.Valkey(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>, decode_responses=<span class="keyword">True</span>)
+session_manager = ValkeySessionManager(
+    session_id=<span class="string">"user-42"</span>,  <span class="comment"># same session ID</span>
+    client=client,
+)
+agent = Agent(session_manager=session_manager)
+
+response = agent(<span class="string">"What was I just telling you about?"</span>)
+print(response)
+<span class="comment"># Agent correctly recalls: "You mentioned you're building a RAG pipeline."</span></code></pre>
+
+<h2>See What Got Saved</h2>
+<pre><code><span class="comment"># List all messages for this session</span>
+messages = session_manager.list_messages()
+<span class="keyword">for</span> msg <span class="keyword">in</span> messages:
+    print(<span class="string">f"[{msg['role']}] {str(msg['content'])[:80]}"</span>)
+
+<span class="comment"># Or inspect raw keys directly</span>
+keys = client.keys(<span class="string">"session:user-42*"</span>)
+<span class="keyword">for</span> k <span class="keyword">in</span> sorted(keys):
+    print(k)</code></pre>
+
 <h2>What Gets Stored Per Session</h2>
 
 <h3>Session Record</h3>

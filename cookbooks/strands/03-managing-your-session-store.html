@@ -20,35 +20,6 @@
 <h1>Managing Your <span class="gradient">ValkeySession Store</span></h1>
 <p class="lead">Delete sessions on logout, query raw keys to see exactly what's in Valkey, and share a single session across multiple agents in an orchestrator pattern.</p>
 
-<h2>Pick Up Where You Left Off</h2>
-<p>Create a new <code>Agent</code> with the same <code>session_id</code> — Strands reloads the full conversation history from Valkey automatically:</p>
-<pre><code><span class="keyword">import</span> valkey
-<span class="keyword">from</span> strands <span class="keyword">import</span> Agent
-<span class="keyword">from</span> strands_valkey_session_manager <span class="keyword">import</span> ValkeySessionManager
-
-<span class="comment"># In a new Python process — history is restored from Valkey</span>
-client = valkey.Valkey(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>, decode_responses=<span class="keyword">True</span>)
-session_manager = ValkeySessionManager(
-    session_id=<span class="string">"user-42"</span>,  <span class="comment"># same session ID</span>
-    client=client,
-)
-agent = Agent(session_manager=session_manager)
-
-response = agent(<span class="string">"What was I just telling you about?"</span>)
-print(response)
-<span class="comment"># Agent correctly recalls: "You mentioned you're building a RAG pipeline."</span></code></pre>
-
-<h2>See What Got Saved</h2>
-<pre><code><span class="comment"># List all messages for this session</span>
-messages = session_manager.list_messages()
-<span class="keyword">for</span> msg <span class="keyword">in</span> messages:
-    print(<span class="string">f"[{msg['role']}] {str(msg['content'])[:80]}"</span>)
-
-<span class="comment"># Or inspect raw keys directly</span>
-keys = client.keys(<span class="string">"session:user-42*"</span>)
-<span class="keyword">for</span> k <span class="keyword">in</span> sorted(keys):
-    print(k)</code></pre>
-
 <h2>Share a Session Across Multiple Agents</h2>
 <p>A single session can hold state for multiple agents — each gets its own agent key and message keys under the same session ID. This is the foundation for orchestrator/subagent patterns where agents need to share context:</p>
 <pre><code><span class="keyword">from</span> strands <span class="keyword">import</span> Agent
