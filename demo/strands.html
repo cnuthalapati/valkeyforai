@@ -78,9 +78,14 @@ a{color:inherit;text-decoration:none}
 .log-line .key{color:rgba(245,245,247,.55)}
 .log-line .comment{color:rgba(245,245,247,.22);font-style:italic}
 .log-divider{border:none;border-top:1px solid var(--brd);margin:4px 0}
-.store-viz{padding:14px;font-family:'SF Mono','Fira Code',monospace;font-size:11px;line-height:1.9;color:var(--t2);max-height:160px;overflow-y:auto}
-.store-key{color:var(--g1)}
-.store-type{color:var(--t3);font-size:10px}
+.msg-list{display:flex;flex-direction:column;gap:6px;padding:14px;max-height:240px;overflow-y:auto}
+.msg-entry{font-size:12px;padding:8px 10px;background:rgba(255,255,255,.03);border-radius:8px;border:1px solid var(--brd);line-height:1.5}
+.msg-role{font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+.msg-role.user-role{color:var(--g1)}
+.msg-role.assistant-role{color:var(--green)}
+.msg-content{color:var(--t2);font-size:12px}
+.msg-time{color:var(--t3);font-size:10px;margin-top:3px}
+.msg-list-empty{font-size:13px;color:var(--t3);text-align:center;padding:20px}
 </style>
 </head>
 <body>
@@ -131,7 +136,7 @@ a{color:inherit;text-decoration:none}
 <div class="metrics-grid">
 <div class="metric"><div class="metric-val orange" id="mMessages">0</div><div class="metric-label">Messages Stored</div></div>
 <div class="metric"><div class="metric-val green" id="mTurns">0</div><div class="metric-label">Turns</div></div>
-<div class="metric"><div class="metric-val blue" id="mKeys">0</div><div class="metric-label">Valkey Keys</div></div>
+<div class="metric"><div class="metric-val blue" id="mSessionAge">0s</div><div class="metric-label">Session Age</div></div>
 <div class="metric"><div class="metric-val purple" id="mAgents">1</div><div class="metric-label">Agents</div></div>
 </div>
 </div>
@@ -145,11 +150,11 @@ a{color:inherit;text-decoration:none}
 
 <div class="panel">
 <div class="panel-header">
-<span class="panel-title">Valkey Keys</span>
-<span style="font-size:11px;color:var(--t3)">live store</span>
+<span class="panel-title">Messages Stored</span>
+<span style="font-size:11px;color:var(--t3)" id="msgStoredCount">0 in Valkey</span>
 </div>
-<div class="store-viz" id="storeViz">
-<span style="color:var(--t3);font-size:12px">Waiting for first message…</span>
+<div class="msg-list" id="msgList">
+<div class="msg-list-empty">No messages yet. Send a message.</div>
 </div>
 </div>
 
@@ -167,6 +172,7 @@ const SESSION_ID = 'user-demo-001';
 const AGENT_ID = 'default';
 let messageCount = 0;
 let turns = 0;
+let sessionStart = null;
 const valkeyStore = {};
 let sessionObj = null;
 let agentObj = null;
@@ -281,7 +287,10 @@ function logDivider() {
 function updateMetrics() {
   document.getElementById('mMessages').textContent = messageCount;
   document.getElementById('mTurns').textContent = turns;
-  document.getElementById('mKeys').textContent = Object.keys(valkeyStore).length;
+  if (sessionObj) {
+    var elapsed = Math.round((Date.now() - sessionStart) / 1000);
+    document.getElementById('mSessionAge').textContent = elapsed < 60 ? elapsed + 's' : Math.floor(elapsed/60) + 'm ' + (elapsed%60) + 's';
+  }
   document.getElementById('turnCount').textContent = messageCount + ' messages in Valkey';
 }
 
@@ -303,17 +312,23 @@ function updateObjList() {
   list.innerHTML = items.join('');
 }
 
-function updateStoreViz() {
-  var viz = document.getElementById('storeViz');
-  var keys = Object.keys(valkeyStore);
-  if (keys.length === 0) {
-    viz.innerHTML = '<span style="color:var(--t3)">No keys yet</span>';
+function updateMsgList() {
+  var list = document.getElementById('msgList');
+  if (messages.length === 0) {
+    list.innerHTML = '<div class="msg-list-empty">No messages yet. Send a message.</div>';
+    document.getElementById('msgStoredCount').textContent = '0 in Valkey';
     return;
   }
-  var lines = keys.map(function(k) {
-    return '<span class="store-key">' + k + '</span>  <span class="store-type">STRING</span>';
+  document.getElementById('msgStoredCount').textContent = messages.length + ' in Valkey';
+  var items = messages.map(function(m) {
+    var roleClass = m.role === 'user' ? 'user-role' : 'assistant-role';
+    var content = (m.content[0] && m.content[0].text) ? m.content[0].text : '';
+    var preview = content.length > 120 ? content.slice(0, 120) + '…' : content;
+    var time = m.created_at.slice(11, 19);
+    return '<div class="msg-entry"><div class="msg-role ' + roleClass + '">' + m.role + '</div><div class="msg-content">' + preview + '</div><div class="msg-time">' + time + '</div></div>';
   });
-  viz.innerHTML = lines.join('<br>');
+  list.innerHTML = items.join('');
+  list.scrollTop = list.scrollHeight;
 }
 
 async function sendMessage() {
@@ -327,6 +342,7 @@ async function sendMessage() {
   logDivider();
 
   if (!sessionObj) {
+    sessionStart = Date.now();
     initSession();
     log('<span class="strands">ValkeySessionManager</span>(session_id=<span class="key">"' + SESSION_ID + '"</span>, client=valkey.Valkey(...))');
     log('<span class="strands">session_manager.create_session</span>(<span class="key">"' + SESSION_ID + '"</span>)');
@@ -362,7 +378,7 @@ async function sendMessage() {
   addMsg('agent', answer);
   updateMetrics();
   updateObjList();
-  updateStoreViz();
+  updateMsgList();
   document.getElementById('sendBtn').disabled = false;
   document.getElementById('chatInput').focus();
 }
