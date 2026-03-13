@@ -26,9 +26,9 @@
 <p>The session manager persists three types of data to Valkey:</p>
 <table>
 <tr><th>Data</th><th>Key Pattern</th><th>Description</th></tr>
-<tr><td>Session</td><td><code>session:{id}</code></td><td>Top-level record for a conversation. Tracks when the session was created and last updated.</td></tr>
-<tr><td>Agent state</td><td><code>session:{id}:agent:{agent_id}</code></td><td>Per-agent record within a session. Tracks message count and interrupt state — used to resume the agent exactly where it left off.</td></tr>
-<tr><td>Message</td><td><code>session:{id}:agent:{agent_id}:message:{msg_id}</code></td><td>A single turn in the conversation. Stores the role (user or assistant), content, any tool calls or results, and a timestamp.</td></tr>
+<tr><td>Session Record</td><td><code>session:{id}</code></td><td>Top-level record for a conversation. Tracks when the session was created and last updated.</td></tr>
+<tr><td>Agent State</td><td><code>session:{id}:agent:{agent_id}</code></td><td>Per-agent record within a session. Tracks message count and interrupt state — used to resume the agent exactly where it left off.</td></tr>
+<tr><td>Conversation Messages</td><td><code>session:{id}:agent:{agent_id}:message:{msg_id}</code></td><td>A single turn in the conversation. Stores the role (user or assistant), content, any tool calls or results, and a timestamp.</td></tr>
 </table>
 
 <h2>Prerequisites</h2>
