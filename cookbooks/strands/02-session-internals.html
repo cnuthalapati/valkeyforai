@@ -20,12 +20,6 @@
 <h1>Managing <span class="gradient">Session Data</span></h1>
 <p class="lead">Understand exactly what <code>strands-valkey-session-manager</code> stores in Valkey — the key structure, the shape of each object, and how to use the built-in API methods to inspect and manage session data.</p>
 
-<h2>How Keys Are Organized</h2>
-<p>The package uses a hierarchical key scheme. Every key is scoped to a session ID:</p>
-<pre><code>session:{session_id}                                         <span class="comment"># Session metadata</span>
-session:{session_id}:agent:{agent_id}                        <span class="comment"># Agent state and metadata</span>
-session:{session_id}:agent:{agent_id}:message:{message_id}   <span class="comment"># Individual messages</span></code></pre>
-
 <h2>What Gets Stored Per Session</h2>
 
 <h3>Session Record</h3>
@@ -111,6 +105,12 @@ print(<span class="string">f"{len(messages)} messages in session"</span>)
 <tr><td><code>update_message(session_id, agent_id, message)</code></td><td>Update an existing message</td></tr>
 <tr><td><code>list_messages()</code></td><td>List all messages for the current session in order</td></tr>
 </table>
+
+<h2>How Keys Are Organized</h2>
+<p>The package uses a hierarchical key scheme. Every key is scoped to a session ID:</p>
+<pre><code>session:{session_id}                                         <span class="comment"># Session metadata</span>
+session:{session_id}:agent:{agent_id}                        <span class="comment"># Agent state and metadata</span>
+session:{session_id}:agent:{agent_id}:message:{message_id}   <span class="comment"># Individual messages</span></code></pre>
 
 <div class="nav-prev-next">
 <a href="01-getting-started.html" class="prev">
