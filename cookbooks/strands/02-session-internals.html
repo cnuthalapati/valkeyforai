@@ -20,13 +20,13 @@
 <h1>Managing <span class="gradient">Session Data</span></h1>
 <p class="lead">Understand exactly what <code>strands-valkey-session-manager</code> stores in Valkey — the key structure, the shape of each object, and how to use the built-in API methods to inspect and manage session data.</p>
 
-<h2>Key Structure</h2>
+<h2>How Keys Are Organized</h2>
 <p>The package uses a hierarchical key scheme. Every key is scoped to a session ID:</p>
 <pre><code>session:{session_id}                                         <span class="comment"># Session metadata</span>
 session:{session_id}:agent:{agent_id}                        <span class="comment"># Agent state and metadata</span>
 session:{session_id}:agent:{agent_id}:message:{message_id}   <span class="comment"># Individual messages</span></code></pre>
 
-<h2>The Three Stored Objects</h2>
+<h2>What Each Object Looks Like</h2>
 
 <h3>Session — top-level metadata</h3>
 <pre><code><span class="comment"># Key: session:{session_id}</span>
@@ -70,7 +70,7 @@ session:{session_id}:agent:{agent_id}:message:{message_id}   <span class="commen
   <span class="string">"created_at"</span>: <span class="string">"2025-06-01T10:00:03+00:00"</span>
 }</code></pre>
 
-<h2>Using the Built-in API Methods</h2>
+<h2>Read and Update Session Data</h2>
 <p>The <code>ValkeySessionManager</code> exposes methods for all CRUD operations. You don't need to touch Valkey directly for most tasks:</p>
 <pre><code><span class="keyword">import</span> valkey
 <span class="keyword">from</span> strands_valkey_session_manager <span class="keyword">import</span> ValkeySessionManager
@@ -94,7 +94,7 @@ print(<span class="string">f"{len(messages)} messages in session"</span>)
     preview = text_blocks[<span class="num">0</span>][:<span class="num">80</span>] <span class="keyword">if</span> text_blocks <span class="keyword">else</span> <span class="string">"[tool use/result]"</span>
     print(<span class="string">f"  [{msg.role:9}] {preview}"</span>)</code></pre>
 
-<h2>Available Methods</h2>
+<h2>Full API Reference</h2>
 <table>
 <tr><th>Method</th><th>Description</th></tr>
 <tr><td><code>create_session(session)</code></td><td>Create a new session record</td></tr>

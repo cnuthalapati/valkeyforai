@@ -27,7 +27,7 @@
 <li>AWS credentials configured</li>
 </ul>
 
-<h2>Connecting to ElastiCache</h2>
+<h2>Swap in Your ElastiCache Endpoint</h2>
 <p>The only change from local development is the connection parameters. <code>ValkeySessionManager</code> accepts any <code>valkey.Valkey</code> client — just swap in your ElastiCache endpoint:</p>
 <pre><code><span class="keyword">import</span> valkey
 <span class="keyword">from</span> strands <span class="keyword">import</span> Agent
@@ -63,7 +63,7 @@ agent = Agent(
 <p><strong>VPC access:</strong> ElastiCache clusters are not publicly accessible. Your Lambda function, ECS task, or EC2 instance must be in the same VPC and security group as the cluster. For local development, use an SSM port-forwarding tunnel.</p>
 </div>
 
-<h2>SSM Tunnel for Local Development</h2>
+<h2>Connect from Your Laptop</h2>
 <p>To connect to ElastiCache from your laptop during development:</p>
 <pre><code><span class="comment"># Start the tunnel (requires a jump host EC2 instance in the same VPC)</span>
 aws ssm start-session \
@@ -78,7 +78,7 @@ aws ssm start-session \
   --region us-east-1</code></pre>
 <p>Then connect to <code>localhost:6379</code> as normal — the tunnel forwards to ElastiCache.</p>
 
-<h2>ElastiCache Compatibility</h2>
+<h2>Tested Configurations</h2>
 <p>The <code>strands-valkey-session-manager</code> package has been tested with:</p>
 <table>
 <tr><th>Cluster Type</th><th>Version</th><th>Status</th></tr>
@@ -87,7 +87,7 @@ aws ssm start-session \
 <tr><td>Local Docker</td><td>valkey/valkey-bundle:latest</td><td>✅ Development</td></tr>
 </table>
 
-<h2>Lambda Deployment Pattern</h2>
+<h2>Deploy to Lambda</h2>
 <p>Initialize the Valkey client outside the handler to reuse connections across warm invocations:</p>
 <pre><code><span class="keyword">import</span> os
 <span class="keyword">import</span> valkey
@@ -118,7 +118,7 @@ _client = valkey.Valkey(
 
     <span class="keyword">return</span> {<span class="string">"statusCode"</span>: <span class="num">200</span>, <span class="string">"body"</span>: response}</code></pre>
 
-<h2>Multi-Tenant Session Factory</h2>
+<h2>Serve Multiple Users</h2>
 <p>For apps serving many users, create a helper that returns a session-scoped agent:</p>
 <pre><code><span class="keyword">def</span> <span class="func">get_agent</span>(session_id: str, system_prompt: str = <span class="string">"You are a helpful assistant."</span>) -> Agent:
     <span class="string">"""Return a Strands agent with Valkey-backed session for the given session_id."""</span>
@@ -138,7 +138,7 @@ agent_bob = get_agent(<span class="string">"user-bob"</span>)
 agent_alice(<span class="string">"I prefer concise answers."</span>)
 agent_bob(<span class="string">"I'm working on a Python project."</span>)</code></pre>
 
-<h2>Eviction Policy</h2>
+<h2>Keep Memory Usage in Check</h2>
 <p>Configure ElastiCache to use <code>allkeys-lru</code> so the least-recently-used sessions are evicted first when memory is full:</p>
 <pre><code><span class="comment"># Set via AWS CLI (one-time cluster configuration)</span>
 aws elasticache modify-replication-group \
@@ -148,7 +148,7 @@ aws elasticache modify-replication-group \
   --profile default \
   --region us-east-1</code></pre>
 
-<h2>Monitoring Session Health</h2>
+<h2>Check What's Active</h2>
 <pre><code><span class="keyword">def</span> <span class="func">session_health</span>(client: valkey.Valkey) -> dict:
     <span class="string">"""Count active sessions and total message keys."""</span>
     all_keys = client.keys(<span class="string">"session:*"</span>)
