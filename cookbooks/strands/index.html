@@ -33,25 +33,20 @@
 
 <div class="hero">
 <h1>Strands Agents</h1>
-<p class="lead">Use Valkey as the session manager backend for AWS Strands agents — persisting conversation history, session metadata, and agent state across invocations.</p>
+<p class="lead">Use the official <code>strands-valkey-session-manager</code> community package to back your Strands agents with Valkey — persisting conversation history, session metadata, and agent state across invocations.</p>
 <div class="arch">┌──────────────────────────────────────────────────────────┐
 │                    Strands Agent                         │
-│  Agent(session_manager=RepositorySessionManager(...))    │
+│       Agent(session_manager=ValkeySessionManager(...))   │
 └──────────────────────────┬───────────────────────────────┘
-                           │ SessionRepository interface
+                           │ strands-valkey-session-manager
                            ▼
-              ┌────────────────────────┐
-              │  ValkeySessionRepository│
-              │  (your implementation) │
-              └────────────┬───────────┘
-                           │
-              ┌────────────▼───────────────────────────┐
+              ┌────────────────────────────────────────┐
               │   ElastiCache for Valkey               │
               │                                        │
-              │  session:{id}          → Session       │
-              │  session:{id}:agent:{id} → AgentState  │
-              │  session:{id}:msg:{id} → Message       │
-              │  session:{id}:agent:{id}:messages → [] │
+              │  session:{id}                → Session │
+              │  session:{id}:agent:{id}     → Agent   │
+              │  session:{id}:agent:{id}:    →         │
+              │    message:{msg_id}          → Message │
               └────────────────────────────────────────┘</div>
 </div>
 
@@ -61,7 +56,7 @@
 <a href="01-getting-started.html" class="cookbook-card">
 <div class="num">01</div>
 <h3>Getting Started</h3>
-<p>Implement <code>ValkeySessionRepository</code> extending the Strands <code>SessionRepository</code> ABC, wire it with <code>RepositorySessionManager</code>, and give your agent persistent sessions.</p>
+<p>Install <code>strands-valkey-session-manager</code>, create a <code>ValkeySessionManager</code>, and wire it to a Strands agent. Persistent conversation history in under 15 minutes.</p>
 <div class="tags">
 <span class="diff-easy">Beginner</span>
 <span class="lang">Python</span>
@@ -72,7 +67,7 @@
 <a href="02-session-internals.html" class="cookbook-card">
 <div class="num">02</div>
 <h3>Session Internals &amp; Inspection</h3>
-<p>Understand the shape of <code>Session</code>, <code>SessionAgent</code>, and <code>SessionMessage</code> objects in Valkey. Inspect, query, and manage session data directly — including multi-agent sessions.</p>
+<p>Understand the key structure and shape of session, agent, and message objects stored by the package. Use <code>list_messages()</code> and other built-in API methods to inspect and manage session data.</p>
 <div class="tags">
 <span class="diff-mid">Intermediate</span>
 <span class="lang">Python</span>
@@ -83,7 +78,7 @@
 <a href="03-production.html" class="cookbook-card">
 <div class="num">03</div>
 <h3>Production &amp; ElastiCache</h3>
-<p>Connect to Amazon ElastiCache with TLS and connection pooling. Configure TTL strategies, sliding expiry, eviction policies, and Lambda deployment patterns for multi-tenant workloads.</p>
+<p>Connect to Amazon ElastiCache with TLS. Tested with ElastiCache Serverless Valkey 8.1 and ElastiCache Valkey 8.2. Covers Lambda deployment, multi-tenant session factories, and eviction policies.</p>
 <div class="tags">
 <span class="diff-hard">Advanced</span>
 <span class="lang">Python</span>
