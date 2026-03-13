@@ -29,6 +29,7 @@ session:{session_id}:agent:{agent_id}:message:{message_id}   <span class="commen
 <h2>What Each Object Looks Like</h2>
 
 <h3>Session — top-level metadata</h3>
+<p>One record per conversation. Tracks when the session was created and last updated.</p>
 <pre><code><span class="comment"># Key: session:{session_id}</span>
 {
   <span class="string">"session_id"</span>: <span class="string">"user-42"</span>,
@@ -38,6 +39,7 @@ session:{session_id}:agent:{agent_id}:message:{message_id}   <span class="commen
 }</code></pre>
 
 <h3>Agent state — per-agent</h3>
+<p>One record per agent within a session. Tracks message count and interrupt state so the agent can resume exactly where it left off.</p>
 <pre><code><span class="comment"># Key: session:{session_id}:agent:{agent_id}</span>
 {
   <span class="string">"agent_id"</span>: <span class="string">"default"</span>,
@@ -49,6 +51,7 @@ session:{session_id}:agent:{agent_id}:message:{message_id}   <span class="commen
 }</code></pre>
 
 <h3>Message — individual turns</h3>
+<p>One record per turn. Stores the role (user or assistant), content text, any tool calls or results, and a timestamp.</p>
 <pre><code><span class="comment"># Key: session:{session_id}:agent:{agent_id}:message:{message_id}</span>
 {
   <span class="string">"message_id"</span>: <span class="string">"3f8a1c2d-..."</span>,
