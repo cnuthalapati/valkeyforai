@@ -77,14 +77,6 @@ agent = Agent(
 response = agent(<span class="string">"My name is Alex and I'm building a RAG pipeline."</span>)
 print(response)</code></pre>
 
-<h2>Valkey Keys Used</h2>
-<table>
-<tr><th>Key Pattern</th><th>Description</th></tr>
-<tr><td><code>session:{id}</code></td><td>Top-level session record — creation time, last updated</td></tr>
-<tr><td><code>session:{id}:agent:{agent_id}</code></td><td>Agent state — message count, interrupt state</td></tr>
-<tr><td><code>session:{id}:agent:{agent_id}:message:{msg_id}</code></td><td>Individual message — role, content, tool calls, timestamp</td></tr>
-</table>
-
 <div class="nav-prev-next">
 <div></div>
 <a href="02-session-internals.html" class="next">
