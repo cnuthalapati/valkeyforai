@@ -25,10 +25,10 @@
 <h2>What Gets Stored</h2>
 <p>The session manager persists three types of data to Valkey:</p>
 <table>
-<tr><th>Data</th><th>Key Pattern</th><th>Contains</th></tr>
-<tr><td>Session metadata</td><td><code>session:{id}</code></td><td>Session ID, creation time, metadata</td></tr>
-<tr><td>Agent state</td><td><code>session:{id}:agent:{agent_id}</code></td><td>Agent ID, conversation manager state, interrupt state</td></tr>
-<tr><td>Messages</td><td><code>session:{id}:agent:{agent_id}:message:{msg_id}</code></td><td>Role, content, tool use/results, timestamps</td></tr>
+<tr><th>Data</th><th>Key Pattern</th><th>Description</th></tr>
+<tr><td>Session</td><td><code>session:{id}</code></td><td>Top-level record for a conversation. Tracks when the session was created and last updated.</td></tr>
+<tr><td>Agent state</td><td><code>session:{id}:agent:{agent_id}</code></td><td>Per-agent record within a session. Tracks message count and interrupt state — used to resume the agent exactly where it left off.</td></tr>
+<tr><td>Message</td><td><code>session:{id}:agent:{agent_id}:message:{msg_id}</code></td><td>A single turn in the conversation. Stores the role (user or assistant), content, any tool calls or results, and a timestamp.</td></tr>
 </table>
 
 <h2>Prerequisites</h2>
@@ -104,10 +104,10 @@ keys = client.keys(<span class="string">"session:user-42*"</span>)
 
 <h2>Valkey Keys Used</h2>
 <table>
-<tr><th>Key Pattern</th><th>Contains</th></tr>
-<tr><td><code>session:{id}</code></td><td>Session metadata (JSON)</td></tr>
-<tr><td><code>session:{id}:agent:{agent_id}</code></td><td>Agent state (JSON)</td></tr>
-<tr><td><code>session:{id}:agent:{agent_id}:message:{msg_id}</code></td><td>Individual message payload (JSON)</td></tr>
+<tr><th>Key Pattern</th><th>Description</th></tr>
+<tr><td><code>session:{id}</code></td><td>Top-level session record — creation time, last updated</td></tr>
+<tr><td><code>session:{id}:agent:{agent_id}</code></td><td>Agent state — message count, interrupt state</td></tr>
+<tr><td><code>session:{id}:agent:{agent_id}:message:{msg_id}</code></td><td>Individual message — role, content, tool calls, timestamp</td></tr>
 </table>
 
 <div class="nav-prev-next">
