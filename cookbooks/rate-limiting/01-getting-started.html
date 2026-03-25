@@ -6,96 +6,127 @@
 <title>01 — Getting Started with Rate Limiting — Valkey for AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../cookbook.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<style>
+body.light .nav{background:rgba(255,255,255,.9)!important}
+body.light pre{background:rgba(0,0,0,.03)!important;border-color:rgba(0,0,0,.08)!important}
+body.light code{color:#1d1d1f}
+body.light .callout{background:rgba(0,0,0,.02);border-color:rgba(0,0,0,.08)}
+body.light table{border-color:rgba(0,0,0,.08)}
+body.light th{background:rgba(0,0,0,.04)}
+body.light td{border-color:rgba(0,0,0,.06)}
+body.light{--bg:#fff;--bg-elevated:#f5f5f7;--bg-card:rgba(0,0,0,.03);--bg-card-hover:rgba(0,0,0,.06);--brd:rgba(0,0,0,.08);--t1:#1d1d1f;--t2:rgba(29,29,31,.6);--t3:rgba(29,29,31,.4)}
+.theme-toggle{background:rgba(128,128,128,.12);border:1px solid rgba(128,128,128,.2);border-radius:100px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:fixed;top:18px;right:24px;z-index:1001}
+pre{position:relative}
+pre code.hljs{background:transparent!important;padding:0}
+</style>
 </head>
 <body>
-<nav class="nav"><div class="nav-inner">
-<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
-<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/rate-limiting/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div>
-</div></nav>
-
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/#frameworks">Frameworks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
 <article>
 <div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/rate-limiting/">Rate Limiting</a> → 01 Getting Started</div>
-<div class="meta"><span class="diff-easy">Beginner</span><span class="lang">Python</span><span class="lang">~5 min</span></div>
+<div class="meta"><span class="diff-easy">Beginner</span><span class="lang">Python</span><span class="lang">~15 min</span></div>
+<h1>Getting Started with Rate Limiting</h1>
 
-<h1>Getting <span class="gradient">Started</span></h1>
-<p class="lead">Start Valkey, install dependencies, and build your first rate limiter in under 5 minutes. By the end you'll have a working fixed-window limiter that tracks both requests and tokens.</p>
 
 <h2>Prerequisites</h2>
 <ul>
 <li>Docker installed (or a running Valkey instance)</li>
 <li>Python 3.9+</li>
 </ul>
-
 <h2>Step 1: Start Valkey</h2>
-<pre><code>docker run -d --name valkey -p 6379:6379 valkey/valkey:latest</code></pre>
-<p>Verify it's running:</p>
-<pre><code>redis-cli ping
-<span class="comment"># PONG</span></code></pre>
-
+<pre><code>docker run -d --name valkey -p 6379:6379 valkey/valkey:latest
+</code></pre>
+<p>Verify it&#39;s running:</p>
+<pre><code>valkey-cli ping
+# PONG
+</code></pre>
 <h2>Step 2: Install Dependencies</h2>
-<pre><code>pip install redis</code></pre>
-<p>That's it — no special libraries needed. The <code>redis</code> Python package works with Valkey out of the box.</p>
-
+<pre><code>pip install redis
+</code></pre>
+<p>That&#39;s it — no special libraries needed. The <code>redis</code> Python package works with Valkey out of the box.</p>
 <h2>Step 3: Your First Rate Limiter</h2>
-<pre><code><span class="keyword">import</span> redis
-<span class="keyword">import</span> time
+<pre><code>import redis
+import time
 
-client = redis.Redis(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>, decode_responses=<span class="keyword">True</span>)
+client = redis.Redis(host=&quot;localhost&quot;, port=6379, decode_responses=True)
 
-<span class="keyword">def</span> <span class="func">check_rate_limit</span>(user_id: str, max_requests: int = <span class="num">10</span>, window: int = <span class="num">60</span>) -> dict:
-    <span class="string">"""Fixed-window rate limiter."""</span>
-    window_num = <span class="func">int</span>(time.time() // window)
-    key = <span class="string">f"rl:{user_id}:{window_num}"</span>
+def check_rate_limit(user_id: str, max_requests: int = 10, window: int = 60) -&gt; dict:
+    &quot;&quot;&quot;Fixed-window rate limiter.&quot;&quot;&quot;
+    window_num = int(time.time() // window)
+    key = f&quot;rl:{user_id}:{window_num}&quot;
 
-    pipe = client.pipeline(transaction=<span class="keyword">True</span>)
+    pipe = client.pipeline(transaction=True)
     pipe.incr(key)
     pipe.expire(key, window)
     results = pipe.execute()
 
-    current = results[<span class="num">0</span>]
-    allowed = current <= max_requests
+    current = results[0]
+    allowed = current &lt;= max_requests
 
-    <span class="keyword">return</span> {
-        <span class="string">"allowed"</span>: allowed,
-        <span class="string">"current"</span>: current,
-        <span class="string">"limit"</span>: max_requests,
-        <span class="string">"remaining"</span>: <span class="func">max</span>(<span class="num">0</span>, max_requests - current),
-    }</code></pre>
-
+    return {
+        &quot;allowed&quot;: allowed,
+        &quot;current&quot;: current,
+        &quot;limit&quot;: max_requests,
+        &quot;remaining&quot;: max(0, max_requests - current),
+    }
+</code></pre>
 <h2>Step 4: Test It</h2>
-<pre><code><span class="comment"># Send 12 requests — last 2 should be denied</span>
-<span class="keyword">for</span> i <span class="keyword">in</span> <span class="func">range</span>(<span class="num">12</span>):
-    result = check_rate_limit(<span class="string">"user-123"</span>, max_requests=<span class="num">10</span>)
-    status = <span class="string">"✅"</span> <span class="keyword">if</span> result[<span class="string">"allowed"</span>] <span class="keyword">else</span> <span class="string">"❌"</span>
-    <span class="func">print</span>(<span class="string">f"{status} Request {i+1}: {result['current']}/{result['limit']}"</span>)</code></pre>
-
+<pre><code># Send 12 requests — last 2 should be denied
+for i in range(12):
+    result = check_rate_limit(&quot;user-123&quot;, max_requests=10)
+    status = &quot;✅&quot; if result[&quot;allowed&quot;] else &quot;❌&quot;
+    print(f&quot;{status} Request {i+1}: {result[&#39;current&#39;]}/{result[&#39;limit&#39;]}&quot;)
+</code></pre>
 <p><strong>Output:</strong></p>
 <pre><code>✅ Request 1: 1/10
 ✅ Request 2: 2/10
 ...
 ✅ Request 10: 10/10
 ❌ Request 11: 11/10
-❌ Request 12: 12/10</code></pre>
-
+❌ Request 12: 12/10
+</code></pre>
 <h2>How It Works</h2>
-<div class="callout">
 <p><strong>Key Insight:</strong> We use <code>INCR</code> + <code>EXPIRE</code> in a pipeline. The key includes the window number (current timestamp ÷ window size), so it auto-rotates every window. Valkey handles all the atomic counting — no race conditions.</p>
-</div>
-
 <table>
-<tr><th>Operation</th><th>Valkey Command</th><th>Time</th></tr>
-<tr><td>Increment counter</td><td><code>INCR</code></td><td>~0.1ms</td></tr>
-<tr><td>Set expiry</td><td><code>EXPIRE</code></td><td>~0.1ms</td></tr>
-<tr><td>Pipeline (both)</td><td>1 round-trip</td><td>~0.2ms total</td></tr>
-</table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Valkey Command</th>
+<th>Time</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Increment counter</td>
+<td><code>INCR</code></td>
+<td>~0.1ms</td>
+</tr>
+<tr>
+<td>Set expiry</td>
+<td><code>EXPIRE</code></td>
+<td>~0.1ms</td>
+</tr>
+<tr>
+<td>Pipeline (both)</td>
+<td>1 round-trip</td>
+<td>~0.2ms total</td>
+</tr>
+<tr>
+<td><a href="02-token-aware.html"> Next → 02 — Token-Aware Limiting </a></td>
+<td></td>
+<td></td>
+</tr>
+</tbody></table>
+
 
 <div class="nav-prev-next">
 <div></div>
-<a href="02-token-aware.html" class="next">
-<span class="label">Next →</span>
-<span class="title">02 — Token-Aware Limiting</span>
-</a>
+<a href="02-token-aware.html" class="next"><span class="label">Next →</span><span class="title">02 — Token-Aware</span></a>
 </div>
 </article>
+<button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg></button>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<script>function toggleTheme(){var b=document.body,l=b.classList.toggle("light");localStorage.setItem("theme",l?"light":"dark")}(function(){if(localStorage.getItem("theme")==="light")document.body.classList.add("light")})()</script>
 </body>
 </html>

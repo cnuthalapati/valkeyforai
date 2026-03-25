@@ -6,51 +6,106 @@
 <title>05 — Fan-Out Patterns — Valkey for AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../cookbook.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<style>
+body.light .nav{background:rgba(255,255,255,.9)!important}
+body.light pre{background:rgba(0,0,0,.03)!important;border-color:rgba(0,0,0,.08)!important}
+body.light code{color:#1d1d1f}
+body.light .callout{background:rgba(0,0,0,.02);border-color:rgba(0,0,0,.08)}
+body.light table{border-color:rgba(0,0,0,.08)}
+body.light th{background:rgba(0,0,0,.04)}
+body.light td{border-color:rgba(0,0,0,.06)}
+body.light{--bg:#fff;--bg-elevated:#f5f5f7;--bg-card:rgba(0,0,0,.03);--bg-card-hover:rgba(0,0,0,.06);--brd:rgba(0,0,0,.08);--t1:#1d1d1f;--t2:rgba(29,29,31,.6);--t3:rgba(29,29,31,.4)}
+.theme-toggle{background:rgba(128,128,128,.12);border:1px solid rgba(128,128,128,.2);border-radius:100px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:fixed;top:18px;right:24px;z-index:1001}
+pre{position:relative}
+pre code.hljs{background:transparent!important;padding:0}
+</style>
 </head>
 <body>
-<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/pubsub-streaming/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div></div></nav>
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/#frameworks">Frameworks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
 <article>
-<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/pubsub-streaming/">Pub/Sub &amp; Streaming</a> → 05 Fan-Out Patterns</div>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/pubsub-streaming/">Pub/Sub & Streaming</a> → 05 Fan-Out</div>
 <div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~25 min</span></div>
-<h1>Fan-Out <span class="gradient">Patterns</span></h1>
-<p class="lead">One producer, many consumers. Broadcast AI agent events, stream LLM responses to dashboards, and deliver notifications to multiple services.</p>
+<h1>Fan-Out Patterns</h1>
+
+
 <h2>Pattern 1: Pub/Sub Fan-Out (Live)</h2>
-<pre><code><span class="keyword">import</span> redis, json, time
-client = redis.Redis(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>, decode_responses=<span class="keyword">True</span>)
+<pre><code>import redis, json, time
+client = redis.Redis(host=&quot;localhost&quot;, port=6379, decode_responses=True)
 
-<span class="keyword">def</span> <span class="func">broadcast_agent_event</span>(agent_id, event_type, payload):
-    <span class="string">"""Broadcast to all subscribers watching this agent."""</span>
-    channel = <span class="string">f"agent:{agent_id}:events"</span>
-    message = {<span class="string">"type"</span>: event_type, <span class="string">"data"</span>: payload, <span class="string">"ts"</span>: time.time()}
+def broadcast_agent_event(agent_id, event_type, payload):
+    &quot;&quot;&quot;Broadcast to all subscribers watching this agent.&quot;&quot;&quot;
+    channel = f&quot;agent:{agent_id}:events&quot;
+    message = {&quot;type&quot;: event_type, &quot;data&quot;: payload, &quot;ts&quot;: time.time()}
     n = client.publish(channel, json.dumps(message))
-    <span class="keyword">return</span> n  <span class="comment"># Number of receivers</span>
+    return n  # Number of receivers
 
-<span class="comment"># Dashboard, logger, metrics all receive this:</span>
-broadcast_agent_event(<span class="string">"agent-1"</span>, <span class="string">"tool_call"</span>, {<span class="string">"tool"</span>: <span class="string">"search"</span>, <span class="string">"query"</span>: <span class="string">"valkey"</span>})</code></pre>
+# Dashboard, logger, metrics all receive this:
+broadcast_agent_event(&quot;agent-1&quot;, &quot;tool_call&quot;, {&quot;tool&quot;: &quot;search&quot;, &quot;query&quot;: &quot;valkey&quot;})
+</code></pre>
 <h2>Pattern 2: Stream Fan-Out (Durable)</h2>
-<pre><code><span class="comment"># Multiple consumer groups on the SAME stream</span>
-<span class="comment"># Each group gets ALL messages independently</span>
-client.xgroup_create(<span class="string">"ai:events"</span>, <span class="string">"loggers"</span>, id=<span class="string">"0"</span>, mkstream=<span class="keyword">True</span>)
-client.xgroup_create(<span class="string">"ai:events"</span>, <span class="string">"metrics"</span>, id=<span class="string">"0"</span>, mkstream=<span class="keyword">True</span>)
-client.xgroup_create(<span class="string">"ai:events"</span>, <span class="string">"alerts"</span>, id=<span class="string">"0"</span>, mkstream=<span class="keyword">True</span>)
+<pre><code># Multiple consumer groups on the SAME stream
+# Each group gets ALL messages independently
+client.xgroup_create(&quot;ai:events&quot;, &quot;loggers&quot;, id=&quot;0&quot;, mkstream=True)
+client.xgroup_create(&quot;ai:events&quot;, &quot;metrics&quot;, id=&quot;0&quot;, mkstream=True)
+client.xgroup_create(&quot;ai:events&quot;, &quot;alerts&quot;, id=&quot;0&quot;, mkstream=True)
 
-<span class="comment"># Producer writes once</span>
-client.xadd(<span class="string">"ai:events"</span>, {<span class="string">"event"</span>: <span class="string">"model_prediction"</span>, <span class="string">"latency_ms"</span>: <span class="string">"45"</span>})
-<span class="comment"># All 3 groups get the message independently</span></code></pre>
+# Producer writes once
+client.xadd(&quot;ai:events&quot;, {&quot;event&quot;: &quot;model_prediction&quot;, &quot;latency_ms&quot;: &quot;45&quot;})
+# All 3 groups get the message independently
+</code></pre>
 <h2>Pattern 3: Hybrid — Stream + Pub/Sub</h2>
-<pre><code><span class="keyword">def</span> <span class="func">publish_with_durability</span>(event):
-    <span class="string">"""Write to Stream (durable) AND Pub/Sub (live)."""</span>
+<pre><code>def publish_with_durability(event):
+    &quot;&quot;&quot;Write to Stream (durable) AND Pub/Sub (live).&quot;&quot;&quot;
     payload = json.dumps(event)
-    client.xadd(<span class="string">"ai:events"</span>, {<span class="string">"data"</span>: payload}, maxlen=<span class="num">50000</span>)
-    client.publish(<span class="string">"ai:events:live"</span>, payload)</code></pre>
-<div class="callout"><p><strong>When to use which:</strong> Pub/Sub for real-time dashboards (missing messages OK). Streams with consumer groups for task queues (every message must be processed). Hybrid for both.</p></div>
-<table><tr><th>Pattern</th><th>Delivery</th><th>Durability</th><th>Best For</th></tr>
-<tr><td>Pub/Sub</td><td>All subscribers</td><td>None</td><td>Live dashboards</td></tr>
-<tr><td>Stream + 1 group</td><td>One worker per msg</td><td>Persistent</td><td>Task queues</td></tr>
-<tr><td>Stream + N groups</td><td>All groups</td><td>Persistent</td><td>Event sourcing</td></tr>
-<tr><td>Hybrid</td><td>Both</td><td>Both</td><td>Full coverage</td></tr></table>
+    client.xadd(&quot;ai:events&quot;, {&quot;data&quot;: payload}, maxlen=50000)
+    client.publish(&quot;ai:events:live&quot;, payload)
+</code></pre>
+<p><strong>When to use which:</strong> Pub/Sub for real-time dashboards (missing messages OK). Streams with consumer groups for task queues (every message must be processed). Hybrid for both.</p>
+<table>
+<thead>
+<tr>
+<th>Pattern</th>
+<th>Delivery</th>
+<th>Durability</th>
+<th>Best For</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Pub/Sub</td>
+<td>All subscribers</td>
+<td>None</td>
+<td>Live dashboards</td>
+</tr>
+<tr>
+<td>Stream + 1 group</td>
+<td>One worker per msg</td>
+<td>Persistent</td>
+<td>Task queues</td>
+</tr>
+<tr>
+<td>Stream + N groups</td>
+<td>All groups</td>
+<td>Persistent</td>
+<td>Event sourcing</td>
+</tr>
+<tr>
+<td>Hybrid</td>
+<td>Both</td>
+<td>Both</td>
+<td>Full coverage</td>
+</tr>
+</tbody></table>
+
+
 <div class="nav-prev-next">
 <a href="04-consumer-groups.html" class="prev"><span class="label">← Previous</span><span class="title">04 — Consumer Groups</span></a>
-<a href="06-production.html" class="next"><span class="label">Next →</span><span class="title">06 — Production Patterns</span></a>
+<a href="06-production.html" class="next"><span class="label">Next →</span><span class="title">06 — Production</span></a>
 </div>
-</article></body></html>
+</article>
+<button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg></button>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<script>function toggleTheme(){var b=document.body,l=b.classList.toggle("light");localStorage.setItem("theme",l?"light":"dark")}(function(){if(localStorage.getItem("theme")==="light")document.body.classList.add("light")})()</script>
+</body>
+</html>

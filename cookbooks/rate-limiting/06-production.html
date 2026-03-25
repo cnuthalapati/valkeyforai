@@ -6,123 +6,134 @@
 <title>06 — Production Patterns — Valkey for AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../cookbook.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<style>
+body.light .nav{background:rgba(255,255,255,.9)!important}
+body.light pre{background:rgba(0,0,0,.03)!important;border-color:rgba(0,0,0,.08)!important}
+body.light code{color:#1d1d1f}
+body.light .callout{background:rgba(0,0,0,.02);border-color:rgba(0,0,0,.08)}
+body.light table{border-color:rgba(0,0,0,.08)}
+body.light th{background:rgba(0,0,0,.04)}
+body.light td{border-color:rgba(0,0,0,.06)}
+body.light{--bg:#fff;--bg-elevated:#f5f5f7;--bg-card:rgba(0,0,0,.03);--bg-card-hover:rgba(0,0,0,.06);--brd:rgba(0,0,0,.08);--t1:#1d1d1f;--t2:rgba(29,29,31,.6);--t3:rgba(29,29,31,.4)}
+.theme-toggle{background:rgba(128,128,128,.12);border:1px solid rgba(128,128,128,.2);border-radius:100px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:fixed;top:18px;right:24px;z-index:1001}
+pre{position:relative}
+pre code.hljs{background:transparent!important;padding:0}
+</style>
 </head>
 <body>
-<nav class="nav"><div class="nav-inner">
-<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
-<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/rate-limiting/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div>
-</div></nav>
-
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/#frameworks">Frameworks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
 <article>
 <div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/rate-limiting/">Rate Limiting</a> → 06 Production</div>
-<div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~30 min</span></div>
+<div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~25 min</span></div>
+<h1>Production Patterns</h1>
 
-<h1>Production <span class="gradient">Patterns</span></h1>
-<p class="lead">Battle-tested patterns for running rate limiters in production AI systems.</p>
 
 <h2>Pattern 1: Retry-After Headers</h2>
 <p>Always tell clients <strong>when</strong> to retry:</p>
-<pre><code><span class="keyword">from</span> fastapi <span class="keyword">import</span> FastAPI, Response, HTTPException
+<pre><code>from fastapi import FastAPI, Response, HTTPException
 
 app = FastAPI()
 
-@app.post(<span class="string">"/api/chat"</span>)
-<span class="keyword">async def</span> <span class="func">chat</span>(prompt: str, response: Response):
+@app.post(&quot;/api/chat&quot;)
+async def chat(prompt: str, response: Response):
     result = limiter.check(tokens=count_tokens(prompt))
 
-    response.headers[<span class="string">"X-RateLimit-Limit"</span>] = <span class="func">str</span>(result.max_requests)
-    response.headers[<span class="string">"X-RateLimit-Remaining"</span>] = <span class="func">str</span>(result.remaining)
-    response.headers[<span class="string">"X-RateLimit-Reset"</span>] = <span class="func">str</span>(result.reset_at)
+    response.headers[&quot;X-RateLimit-Limit&quot;] = str(result.max_requests)
+    response.headers[&quot;X-RateLimit-Remaining&quot;] = str(result.remaining)
+    response.headers[&quot;X-RateLimit-Reset&quot;] = str(result.reset_at)
 
-    <span class="keyword">if not</span> result.allowed:
-        response.headers[<span class="string">"Retry-After"</span>] = <span class="func">str</span>(<span class="func">int</span>(result.retry_after_seconds))
-        <span class="keyword">raise</span> HTTPException(status_code=<span class="num">429</span>, detail={
-            <span class="string">"error"</span>: <span class="string">"rate_limit_exceeded"</span>,
-            <span class="string">"retry_after_seconds"</span>: result.retry_after_seconds,
+    if not result.allowed:
+        response.headers[&quot;Retry-After&quot;] = str(int(result.retry_after_seconds))
+        raise HTTPException(status_code=429, detail={
+            &quot;error&quot;: &quot;rate_limit_exceeded&quot;,
+            &quot;retry_after_seconds&quot;: result.retry_after_seconds,
         })
-    <span class="keyword">return await</span> call_llm(prompt)</code></pre>
-
+    return await call_llm(prompt)
+</code></pre>
 <h2>Pattern 2: Graceful Degradation</h2>
-<p>Don't hard-fail — degrade gracefully through model tiers, cache, then queue:</p>
-<pre><code><span class="keyword">async def</span> <span class="func">smart_llm_call</span>(prompt, user_id):
-    <span class="comment"># Tier 1: Preferred model</span>
-    result = limiter.check(user_id, model=<span class="string">"gpt-4"</span>)
-    <span class="keyword">if</span> result.allowed:
-        <span class="keyword">return await</span> call_llm(prompt, model=<span class="string">"gpt-4"</span>)
+<p>Don&#39;t hard-fail — degrade gracefully through model tiers, cache, then queue:</p>
+<pre><code>async def smart_llm_call(prompt, user_id):
+    # Tier 1: Preferred model
+    result = limiter.check(user_id, model=&quot;gpt-4&quot;)
+    if result.allowed:
+        return await call_llm(prompt, model=&quot;gpt-4&quot;)
 
-    <span class="comment"># Tier 2: Cheaper model</span>
-    result = limiter.check(user_id, model=<span class="string">"gpt-3.5-turbo"</span>)
-    <span class="keyword">if</span> result.allowed:
-        <span class="keyword">return await</span> call_llm(prompt, model=<span class="string">"gpt-3.5-turbo"</span>)
+    # Tier 2: Cheaper model
+    result = limiter.check(user_id, model=&quot;gpt-3.5-turbo&quot;)
+    if result.allowed:
+        return await call_llm(prompt, model=&quot;gpt-3.5-turbo&quot;)
 
-    <span class="comment"># Tier 3: Semantic cache</span>
-    cached = <span class="keyword">await</span> semantic_cache_lookup(prompt)
-    <span class="keyword">if</span> cached:
-        <span class="keyword">return</span> {<span class="string">"response"</span>: cached, <span class="string">"source"</span>: <span class="string">"cache"</span>}
+    # Tier 3: Semantic cache
+    cached = await semantic_cache_lookup(prompt)
+    if cached:
+        return {&quot;response&quot;: cached, &quot;source&quot;: &quot;cache&quot;}
 
-    <span class="comment"># Tier 4: Queue for later</span>
-    <span class="keyword">await</span> enqueue_request(user_id, prompt)
-    <span class="keyword">return</span> {<span class="string">"response"</span>: <span class="string">"Queued for processing"</span>, <span class="string">"source"</span>: <span class="string">"queued"</span>}</code></pre>
-
+    # Tier 4: Queue for later
+    await enqueue_request(user_id, prompt)
+    return {&quot;response&quot;: &quot;Queued for processing&quot;, &quot;source&quot;: &quot;queued&quot;}
+</code></pre>
 <h2>Pattern 3: Circuit Breaker</h2>
 <p>If Valkey goes down, fail-open (allow requests) rather than blocking everything:</p>
-<pre><code><span class="keyword">class</span> <span class="func">RateLimiterWithCircuitBreaker</span>:
-    <span class="keyword">def</span> <span class="func">__init__</span>(self):
-        self.failure_count = <span class="num">0</span>
-        self.failure_threshold = <span class="num">3</span>
-        self.circuit_open_until = <span class="num">0</span>
+<pre><code>class RateLimiterWithCircuitBreaker:
+    def __init__(self):
+        self.failure_count = 0
+        self.failure_threshold = 3
+        self.circuit_open_until = 0
 
-    <span class="keyword">def</span> <span class="func">check</span>(self, tokens):
-        <span class="keyword">if</span> time.time() < self.circuit_open_until:
-            <span class="keyword">return</span> {<span class="string">"allowed"</span>: <span class="keyword">True</span>, <span class="string">"source"</span>: <span class="string">"circuit_breaker"</span>}
-        <span class="keyword">try</span>:
+    def check(self, tokens):
+        if time.time() &lt; self.circuit_open_until:
+            return {&quot;allowed&quot;: True, &quot;source&quot;: &quot;circuit_breaker&quot;}
+        try:
             result = self._do_check(tokens)
-            self.failure_count = <span class="num">0</span>
-            <span class="keyword">return</span> result
-        <span class="keyword">except</span> Exception:
-            self.failure_count += <span class="num">1</span>
-            <span class="keyword">if</span> self.failure_count >= self.failure_threshold:
-                self.circuit_open_until = time.time() + <span class="num">30</span>
-            <span class="keyword">return</span> {<span class="string">"allowed"</span>: <span class="keyword">True</span>, <span class="string">"source"</span>: <span class="string">"fallback"</span>}</code></pre>
-
+            self.failure_count = 0
+            return result
+        except Exception:
+            self.failure_count += 1
+            if self.failure_count &gt;= self.failure_threshold:
+                self.circuit_open_until = time.time() + 30
+            return {&quot;allowed&quot;: True, &quot;source&quot;: &quot;fallback&quot;}
+</code></pre>
 <h2>Pattern 4: Request Queuing with Streams</h2>
-<pre><code><span class="keyword">def</span> <span class="func">enqueue_request</span>(user_id, prompt, model=<span class="string">"gpt-4"</span>):
-    client.xadd(<span class="string">"llm:queue"</span>, {
-        <span class="string">"user_id"</span>: user_id,
-        <span class="string">"prompt"</span>: prompt,
-        <span class="string">"model"</span>: model,
-        <span class="string">"queued_at"</span>: <span class="func">str</span>(time.time()),
-    }, maxlen=<span class="num">10000</span>)</code></pre>
-
+<pre><code>def enqueue_request(user_id, prompt, model=&quot;gpt-4&quot;):
+    client.xadd(&quot;llm:queue&quot;, {
+        &quot;user_id&quot;: user_id,
+        &quot;prompt&quot;: prompt,
+        &quot;model&quot;: model,
+        &quot;queued_at&quot;: str(time.time()),
+    }, maxlen=10000)
+</code></pre>
 <h2>Production Checklist</h2>
 <ul>
 <li><strong>Retry-After headers</strong> on every 429 response</li>
 <li><strong>Circuit breaker</strong> for Valkey connection failures</li>
 <li><strong>Fail-open policy</strong> — never block users because of infra issues</li>
 <li><strong>Graceful degradation</strong> — cheaper models before hard rejection</li>
-<li><strong>Request queuing</strong> — don't lose requests, queue them</li>
+<li><strong>Request queuing</strong> — don&#39;t lose requests, queue them</li>
 <li><strong>Observability</strong> — log every allow/deny decision</li>
 <li><strong>Dynamic config</strong> — update limits without redeploying</li>
 <li><strong>Connection pooling</strong> — reuse Valkey connections</li>
 <li><strong>Lua scripts</strong> — atomic check-and-increment for correctness</li>
 </ul>
-
 <h2>Valkey Configuration</h2>
-<pre><code><span class="comment"># valkey.conf optimizations for rate limiting</span>
+<pre><code># valkey.conf optimizations for rate limiting
 maxmemory 256mb
 maxmemory-policy allkeys-lru
 hz 100
 tcp-keepalive 300
-timeout 0</code></pre>
-
-<div class="callout">
+timeout 0
+</code></pre>
 <p><strong>Full Series Complete!</strong> You now have everything you need to implement production-grade rate limiting for AI workloads. All code is open source — <a href="https://github.com/meet-bhagdev/valkeyforai/tree/main">clone the repo</a> and start shipping.</p>
-</div>
+
 
 <div class="nav-prev-next">
-<a href="05-cost-based.html"><span class="label">← Previous</span><span class="title">05 — Cost-Based Limiting</span></a>
-<a href="/cookbooks/rate-limiting/" class="next"><span class="label">Back to →</span><span class="title">All Cookbooks</span></a>
+<a href="05-cost-based.html" class="prev"><span class="label">← Previous</span><span class="title">05 — Cost-Based</span></a>
+<div></div>
 </div>
 </article>
+<button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg></button>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<script>function toggleTheme(){var b=document.body,l=b.classList.toggle("light");localStorage.setItem("theme",l?"light":"dark")}(function(){if(localStorage.getItem("theme")==="light")document.body.classList.add("light")})()</script>
 </body>
 </html>

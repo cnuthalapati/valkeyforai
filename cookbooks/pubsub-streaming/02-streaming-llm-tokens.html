@@ -6,176 +6,201 @@
 <title>02 — Streaming LLM Tokens — Valkey for AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../cookbook.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<style>
+body.light .nav{background:rgba(255,255,255,.9)!important}
+body.light pre{background:rgba(0,0,0,.03)!important;border-color:rgba(0,0,0,.08)!important}
+body.light code{color:#1d1d1f}
+body.light .callout{background:rgba(0,0,0,.02);border-color:rgba(0,0,0,.08)}
+body.light table{border-color:rgba(0,0,0,.08)}
+body.light th{background:rgba(0,0,0,.04)}
+body.light td{border-color:rgba(0,0,0,.06)}
+body.light{--bg:#fff;--bg-elevated:#f5f5f7;--bg-card:rgba(0,0,0,.03);--bg-card-hover:rgba(0,0,0,.06);--brd:rgba(0,0,0,.08);--t1:#1d1d1f;--t2:rgba(29,29,31,.6);--t3:rgba(29,29,31,.4)}
+.theme-toggle{background:rgba(128,128,128,.12);border:1px solid rgba(128,128,128,.2);border-radius:100px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:fixed;top:18px;right:24px;z-index:1001}
+pre{position:relative}
+pre code.hljs{background:transparent!important;padding:0}
+</style>
 </head>
 <body>
-<nav class="nav"><div class="nav-inner">
-<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
-<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/pubsub-streaming/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div>
-</div></nav>
-
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/#frameworks">Frameworks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
 <article>
-<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/pubsub-streaming/">Pub/Sub & Streaming</a> → 02 Streaming LLM Tokens</div>
-<div class="meta"><span class="diff-medium">Intermediate</span><span class="lang">Python</span><span class="lang">~15 min</span></div>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/pubsub-streaming/">Pub/Sub & Streaming</a> → 02 LLM Tokens</div>
+<div class="meta"><span class="diff-medium">Intermediate</span><span class="lang">Python</span><span class="lang">~20 min</span></div>
+<h1>Streaming LLM Tokens</h1>
 
-<h1>Streaming LLM <span class="gradient">Tokens</span></h1>
-<p class="lead">Broadcast token-by-token LLM responses to multiple clients in real-time using Valkey Pub/Sub. Build a scalable streaming layer between your LLM and frontend clients.</p>
 
 <h2>The Problem</h2>
 <p>When streaming from an LLM (OpenAI, Anthropic, etc.), tokens arrive one at a time. If you have multiple clients watching the same response, you need to fan out each token to all of them. Valkey Pub/Sub is perfect for this:</p>
-<pre><code><span class="comment"># Architecture:</span>
-<span class="comment">#   LLM API  ──▶  Your Server  ──▶  Valkey PUBLISH  ──▶  Client A</span>
-<span class="comment">#                    (token)       channel: llm:{id}  ──▶  Client B</span>
-<span class="comment">#                                                     ──▶  Client C</span></code></pre>
-
+<pre><code># Architecture:
+#   LLM API  ──▶  Your Server  ──▶  Valkey PUBLISH  ──▶  Client A
+#                    (token)       channel: llm:{id}  ──▶  Client B
+#                                                     ──▶  Client C
+</code></pre>
 <h2>Step 1: Token Publisher (Server Side)</h2>
-<pre><code><span class="keyword">import</span> redis
-<span class="keyword">import</span> json
-<span class="keyword">import</span> time
-<span class="keyword">import</span> uuid
+<pre><code>import redis
+import json
+import time
+import uuid
 
-client = redis.Redis(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>, decode_responses=<span class="keyword">True</span>)
+client = redis.Redis(host=&quot;localhost&quot;, port=6379, decode_responses=True)
 
-<span class="keyword">def</span> <span class="func">stream_llm_response</span>(prompt: str, request_id: str = <span class="keyword">None</span>):
-    <span class="string">"""Simulate an LLM streaming response, publishing each token."""</span>
-    request_id = request_id <span class="keyword">or</span> <span class="func">str</span>(uuid.uuid4())[:8]
-    channel = <span class="string">f"llm:stream:{request_id}"</span>
+def stream_llm_response(prompt: str, request_id: str = None):
+    &quot;&quot;&quot;Simulate an LLM streaming response, publishing each token.&quot;&quot;&quot;
+    request_id = request_id or str(uuid.uuid4())[:8]
+    channel = f&quot;llm:stream:{request_id}&quot;
 
-    <span class="comment"># Notify clients that streaming has started</span>
+    # Notify clients that streaming has started
     client.publish(channel, json.dumps({
-        <span class="string">"type"</span>: <span class="string">"start"</span>,
-        <span class="string">"request_id"</span>: request_id,
-        <span class="string">"model"</span>: <span class="string">"gpt-4"</span>,
-        <span class="string">"timestamp"</span>: time.time(),
+        &quot;type&quot;: &quot;start&quot;,
+        &quot;request_id&quot;: request_id,
+        &quot;model&quot;: &quot;gpt-4&quot;,
+        &quot;timestamp&quot;: time.time(),
     }))
 
-    <span class="comment"># Simulate token-by-token streaming</span>
-    tokens = [<span class="string">"Valkey"</span>, <span class="string">" is"</span>, <span class="string">" an"</span>, <span class="string">" open"</span>, <span class="string">"-source"</span>,
-              <span class="string">" in"</span>, <span class="string">"-memory"</span>, <span class="string">" data"</span>, <span class="string">" store"</span>, <span class="string">"."</span>]
+    # Simulate token-by-token streaming
+    tokens = [&quot;Valkey&quot;, &quot; is&quot;, &quot; an&quot;, &quot; open&quot;, &quot;-source&quot;,
+              &quot; in&quot;, &quot;-memory&quot;, &quot; data&quot;, &quot; store&quot;, &quot;.&quot;]
 
-    <span class="keyword">for</span> i, token <span class="keyword">in</span> <span class="func">enumerate</span>(tokens):
-        <span class="comment"># In production, this would come from the LLM API:</span>
-        <span class="comment"># for chunk in openai.chat.completions.create(stream=True):</span>
-        <span class="comment">#     token = chunk.choices[0].delta.content</span>
+    for i, token in enumerate(tokens):
+        # In production, this would come from the LLM API:
+        # for chunk in openai.chat.completions.create(stream=True):
+        #     token = chunk.choices[0].delta.content
 
         client.publish(channel, json.dumps({
-            <span class="string">"type"</span>: <span class="string">"token"</span>,
-            <span class="string">"content"</span>: token,
-            <span class="string">"index"</span>: i,
-            <span class="string">"timestamp"</span>: time.time(),
+            &quot;type&quot;: &quot;token&quot;,
+            &quot;content&quot;: token,
+            &quot;index&quot;: i,
+            &quot;timestamp&quot;: time.time(),
         }))
-        time.sleep(<span class="num">0.05</span>)  <span class="comment"># Simulate token delay</span>
+        time.sleep(0.05)  # Simulate token delay
 
-    <span class="comment"># Notify clients that streaming is complete</span>
+    # Notify clients that streaming is complete
     client.publish(channel, json.dumps({
-        <span class="string">"type"</span>: <span class="string">"end"</span>,
-        <span class="string">"request_id"</span>: request_id,
-        <span class="string">"total_tokens"</span>: <span class="func">len</span>(tokens),
-        <span class="string">"timestamp"</span>: time.time(),
+        &quot;type&quot;: &quot;end&quot;,
+        &quot;request_id&quot;: request_id,
+        &quot;total_tokens&quot;: len(tokens),
+        &quot;timestamp&quot;: time.time(),
     }))
 
-    <span class="keyword">return</span> request_id
+    return request_id
 
-<span class="comment"># Usage</span>
-rid = stream_llm_response(<span class="string">"What is Valkey?"</span>)
-<span class="func">print</span>(<span class="string">f"Streamed response: {rid}"</span>)</code></pre>
-
+# Usage
+rid = stream_llm_response(&quot;What is Valkey?&quot;)
+print(f&quot;Streamed response: {rid}&quot;)
+</code></pre>
 <h2>Step 2: Token Subscriber (Client Side)</h2>
-<pre><code><span class="keyword">import</span> redis
-<span class="keyword">import</span> json
+<pre><code>import redis
+import json
 
-client = redis.Redis(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>, decode_responses=<span class="keyword">True</span>)
+client = redis.Redis(host=&quot;localhost&quot;, port=6379, decode_responses=True)
 
-<span class="keyword">def</span> <span class="func">watch_stream</span>(request_id: str):
-    <span class="string">"""Subscribe to an LLM response stream and reassemble tokens."""</span>
+def watch_stream(request_id: str):
+    &quot;&quot;&quot;Subscribe to an LLM response stream and reassemble tokens.&quot;&quot;&quot;
     pubsub = client.pubsub()
-    channel = <span class="string">f"llm:stream:{request_id}"</span>
+    channel = f&quot;llm:stream:{request_id}&quot;
     pubsub.subscribe(channel)
 
     full_response = []
 
-    <span class="keyword">for</span> message <span class="keyword">in</span> pubsub.listen():
-        <span class="keyword">if</span> message[<span class="string">"type"</span>] != <span class="string">"message"</span>:
-            <span class="keyword">continue</span>
+    for message in pubsub.listen():
+        if message[&quot;type&quot;] != &quot;message&quot;:
+            continue
 
-        data = json.loads(message[<span class="string">"data"</span>])
+        data = json.loads(message[&quot;data&quot;])
 
-        <span class="keyword">if</span> data[<span class="string">"type"</span>] == <span class="string">"start"</span>:
-            <span class="func">print</span>(<span class="string">f"Stream started (model: {data['model']})"</span>)
+        if data[&quot;type&quot;] == &quot;start&quot;:
+            print(f&quot;Stream started (model: {data[&#39;model&#39;]})&quot;)
 
-        <span class="keyword">elif</span> data[<span class="string">"type"</span>] == <span class="string">"token"</span>:
-            token = data[<span class="string">"content"</span>]
+        elif data[&quot;type&quot;] == &quot;token&quot;:
+            token = data[&quot;content&quot;]
             full_response.append(token)
-            <span class="func">print</span>(token, end=<span class="string">""</span>, flush=<span class="keyword">True</span>)  <span class="comment"># Print token-by-token</span>
+            print(token, end=&quot;&quot;, flush=True)  # Print token-by-token
 
-        <span class="keyword">elif</span> data[<span class="string">"type"</span>] == <span class="string">"end"</span>:
-            <span class="func">print</span>(<span class="string">f"\n--- Complete ({data['total_tokens']} tokens) ---"</span>)
-            <span class="keyword">break</span>
+        elif data[&quot;type&quot;] == &quot;end&quot;:
+            print(f&quot;\n--- Complete ({data[&#39;total_tokens&#39;]} tokens) ---&quot;)
+            break
 
     pubsub.unsubscribe(channel)
-    <span class="keyword">return</span> <span class="string">""</span>.join(full_response)
+    return &quot;&quot;.join(full_response)
 
-<span class="comment"># Run in another terminal:</span>
-<span class="comment"># result = watch_stream("abc123")</span>
-<span class="comment"># Output: Valkey is an open-source in-memory data store.</span></code></pre>
-
+# Run in another terminal:
+# result = watch_stream(&quot;abc123&quot;)
+# Output: Valkey is an open-source in-memory data store.
+</code></pre>
 <h2>Step 3: OpenAI Integration</h2>
-<p>Here's the real-world version with the OpenAI API:</p>
-<pre><code><span class="keyword">from</span> openai <span class="keyword">import</span> OpenAI
+<p>Here&#39;s the real-world version with the OpenAI API:</p>
+<pre><code>from openai import OpenAI
 
 openai_client = OpenAI()
 
-<span class="keyword">def</span> <span class="func">stream_openai_to_valkey</span>(prompt: str, request_id: str):
-    <span class="string">"""Stream from OpenAI API → Valkey Pub/Sub → all subscribers."""</span>
-    channel = <span class="string">f"llm:stream:{request_id}"</span>
+def stream_openai_to_valkey(prompt: str, request_id: str):
+    &quot;&quot;&quot;Stream from OpenAI API → Valkey Pub/Sub → all subscribers.&quot;&quot;&quot;
+    channel = f&quot;llm:stream:{request_id}&quot;
 
-    client.publish(channel, json.dumps({<span class="string">"type"</span>: <span class="string">"start"</span>}))
+    client.publish(channel, json.dumps({&quot;type&quot;: &quot;start&quot;}))
 
     stream = openai_client.chat.completions.create(
-        model=<span class="string">"gpt-4"</span>,
-        messages=[{<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: prompt}],
-        stream=<span class="keyword">True</span>,
+        model=&quot;gpt-4&quot;,
+        messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: prompt}],
+        stream=True,
     )
 
-    token_count = <span class="num">0</span>
-    <span class="keyword">for</span> chunk <span class="keyword">in</span> stream:
-        content = chunk.choices[<span class="num">0</span>].delta.content
-        <span class="keyword">if</span> content:
+    token_count = 0
+    for chunk in stream:
+        content = chunk.choices[0].delta.content
+        if content:
             client.publish(channel, json.dumps({
-                <span class="string">"type"</span>: <span class="string">"token"</span>,
-                <span class="string">"content"</span>: content,
-                <span class="string">"index"</span>: token_count,
+                &quot;type&quot;: &quot;token&quot;,
+                &quot;content&quot;: content,
+                &quot;index&quot;: token_count,
             }))
-            token_count += <span class="num">1</span>
+            token_count += 1
 
     client.publish(channel, json.dumps({
-        <span class="string">"type"</span>: <span class="string">"end"</span>,
-        <span class="string">"total_tokens"</span>: token_count,
-    }))</code></pre>
-
+        &quot;type&quot;: &quot;end&quot;,
+        &quot;total_tokens&quot;: token_count,
+    }))
+</code></pre>
 <h2>Multi-Client Fan-Out</h2>
-<div class="callout">
 <p><strong>Key Insight:</strong> Every <code>PUBLISH</code> is delivered to ALL subscribers on that channel simultaneously. If 100 clients are watching the same LLM response, all 100 receive each token at the same time — with zero additional cost. This is pure O(N) fan-out handled entirely by Valkey.</p>
-</div>
-
 <table>
-<tr><th>Metric</th><th>Value</th></tr>
-<tr><td>Publish latency (per token)</td><td>~0.1ms</td></tr>
-<tr><td>Delivery to 1 subscriber</td><td>~0.1ms</td></tr>
-<tr><td>Delivery to 100 subscribers</td><td>~0.5ms</td></tr>
-<tr><td>Max subscribers per channel</td><td>Unlimited</td></tr>
-<tr><td>Message size limit</td><td>512MB (practical: keep small)</td></tr>
-</table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Publish latency (per token)</td>
+<td>~0.1ms</td>
+</tr>
+<tr>
+<td>Delivery to 1 subscriber</td>
+<td>~0.1ms</td>
+</tr>
+<tr>
+<td>Delivery to 100 subscribers</td>
+<td>~0.5ms</td>
+</tr>
+<tr>
+<td>Max subscribers per channel</td>
+<td>Unlimited</td>
+</tr>
+<tr>
+<td>Message size limit</td>
+<td>512MB (practical: keep small)</td>
+</tr>
+</tbody></table>
+
 
 <div class="nav-prev-next">
-<a href="01-getting-started.html" class="prev">
-<span class="label">← Previous</span>
-<span class="title">01 — Getting Started</span>
-</a>
-<a href="03-valkey-streams.html" class="next">
-<span class="label">Next →</span>
-<span class="title">03 — Valkey Streams Fundamentals</span>
-</a>
+<a href="01-getting-started.html" class="prev"><span class="label">← Previous</span><span class="title">01 — Getting Started</span></a>
+<a href="03-valkey-streams.html" class="next"><span class="label">Next →</span><span class="title">03 — Streams</span></a>
 </div>
 </article>
+<button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg></button>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<script>function toggleTheme(){var b=document.body,l=b.classList.toggle("light");localStorage.setItem("theme",l?"light":"dark")}(function(){if(localStorage.getItem("theme")==="light")document.body.classList.add("light")})()</script>
 </body>
 </html>

@@ -6,39 +6,48 @@
 <title>03 — Agent Rate Limiting — Valkey for AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../cookbook.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<style>
+body.light .nav{background:rgba(255,255,255,.9)!important}
+body.light pre{background:rgba(0,0,0,.03)!important;border-color:rgba(0,0,0,.08)!important}
+body.light code{color:#1d1d1f}
+body.light .callout{background:rgba(0,0,0,.02);border-color:rgba(0,0,0,.08)}
+body.light table{border-color:rgba(0,0,0,.08)}
+body.light th{background:rgba(0,0,0,.04)}
+body.light td{border-color:rgba(0,0,0,.06)}
+body.light{--bg:#fff;--bg-elevated:#f5f5f7;--bg-card:rgba(0,0,0,.03);--bg-card-hover:rgba(0,0,0,.06);--brd:rgba(0,0,0,.08);--t1:#1d1d1f;--t2:rgba(29,29,31,.6);--t3:rgba(29,29,31,.4)}
+.theme-toggle{background:rgba(128,128,128,.12);border:1px solid rgba(128,128,128,.2);border-radius:100px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:fixed;top:18px;right:24px;z-index:1001}
+pre{position:relative}
+pre code.hljs{background:transparent!important;padding:0}
+</style>
 </head>
 <body>
-<nav class="nav"><div class="nav-inner">
-<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
-<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/rate-limiting/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div>
-</div></nav>
-
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/#frameworks">Frameworks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
 <article>
 <div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/rate-limiting/">Rate Limiting</a> → 03 Agent Limiting</div>
-<div class="meta"><span class="diff-mid">Intermediate</span><span class="lang">Python</span><span class="lang">~20 min</span></div>
+<div class="meta"><span class="diff-medium">Intermediate</span><span class="lang">Python</span><span class="lang">~20 min</span></div>
+<h1>Agent Rate Limiting</h1>
 
-<h1>Agent <span class="gradient">Rate Limiting</span></h1>
-<p class="lead">AI agents make many autonomous decisions — tool calls, web searches, code execution. Without per-agent limits, a single runaway agent can burn through your entire LLM budget in minutes.</p>
 
 <h2>The Problem</h2>
-<pre><code>Agent "research-bot" has a plan:
+<pre><code>Agent &quot;research-bot&quot; has a plan:
   1. Search the web (1 API call)
   2. Read 15 pages (15 API calls)
   3. Summarize each page (15 LLM calls × 2000 tokens each)
   4. Write final report (1 LLM call × 8000 tokens)
 
-Total: 32 calls, ~38,000 tokens — in 30 seconds.</code></pre>
-
+Total: 32 calls, ~38,000 tokens — in 30 seconds.
+</code></pre>
 <h2>Step 1: Per-Agent Token Bucket</h2>
 <p>Token bucket is ideal for agents — it allows bursts (agents work in bursts) while enforcing a steady-state rate:</p>
-<pre><code>TOKEN_BUCKET_SCRIPT = <span class="string">"""
+<pre><code>TOKEN_BUCKET_SCRIPT = &quot;&quot;&quot;
 local key = KEYS[1]
 local capacity = tonumber(ARGV[1])
 local refill_rate = tonumber(ARGV[2])
 local requested = tonumber(ARGV[3])
 local now = tonumber(ARGV[4])
 
-local bucket = redis.call('HMGET', key, 'tokens', 'last_refill')
+local bucket = redis.call(&#39;HMGET&#39;, key, &#39;tokens&#39;, &#39;last_refill&#39;)
 local tokens = tonumber(bucket[1])
 local last_refill = tonumber(bucket[2])
 
@@ -50,67 +59,70 @@ end
 local elapsed = now - last_refill
 tokens = math.min(capacity, tokens + elapsed * refill_rate)
 
-if tokens >= requested then
+if tokens &gt;= requested then
     tokens = tokens - requested
-    redis.call('HMSET', key, 'tokens', tokens, 'last_refill', now)
-    redis.call('EXPIRE', key, 3600)
+    redis.call(&#39;HMSET&#39;, key, &#39;tokens&#39;, tokens, &#39;last_refill&#39;, now)
+    redis.call(&#39;EXPIRE&#39;, key, 3600)
     return {1, tokens}
 else
-    redis.call('HMSET', key, 'tokens', tokens, 'last_refill', now)
-    redis.call('EXPIRE', key, 3600)
+    redis.call(&#39;HMSET&#39;, key, &#39;tokens&#39;, tokens, &#39;last_refill&#39;, now)
+    redis.call(&#39;EXPIRE&#39;, key, 3600)
     local wait = (requested - tokens) / refill_rate
     return {0, tokens, math.ceil(wait * 1000)}
 end
-"""</span></code></pre>
-
+&quot;&quot;&quot;
+</code></pre>
 <h2>Step 2: Tool-Specific Costs</h2>
 <p>Different tools have different costs. A web search is cheap; code execution is expensive:</p>
 <pre><code>TOOL_COSTS = {
-    <span class="string">"web_search"</span>: <span class="num">1</span>,
-    <span class="string">"read_page"</span>: <span class="num">1</span>,
-    <span class="string">"llm_call"</span>: <span class="num">3</span>,       <span class="comment"># LLM calls cost 3x</span>
-    <span class="string">"code_execute"</span>: <span class="num">5</span>,   <span class="comment"># Code execution costs 5x</span>
-    <span class="string">"image_generate"</span>: <span class="num">10</span>, <span class="comment"># Image gen costs 10x</span>
+    &quot;web_search&quot;: 1,
+    &quot;read_page&quot;: 1,
+    &quot;llm_call&quot;: 3,       # LLM calls cost 3x
+    &quot;code_execute&quot;: 5,   # Code execution costs 5x
+    &quot;image_generate&quot;: 10, # Image gen costs 10x
 }
 
-<span class="keyword">def</span> <span class="func">agent_tool_check</span>(agent_id: str, tool_name: str) -> dict:
-    cost = TOOL_COSTS.get(tool_name, <span class="num">1</span>)
-    result = agent_check(agent_id, capacity=<span class="num">50</span>, refill_rate=<span class="num">5.0</span>, cost=cost)
-    result[<span class="string">"tool"</span>] = tool_name
-    result[<span class="string">"cost"</span>] = cost
-    <span class="keyword">return</span> result</code></pre>
-
+def agent_tool_check(agent_id: str, tool_name: str) -&gt; dict:
+    cost = TOOL_COSTS.get(tool_name, 1)
+    result = agent_check(agent_id, capacity=50, refill_rate=5.0, cost=cost)
+    result[&quot;tool&quot;] = tool_name
+    result[&quot;cost&quot;] = cost
+    return result
+</code></pre>
 <h2>Step 3: Concurrent Agent Limit</h2>
 <p>Limit how many agents can run simultaneously per user using a Sorted Set with TTL:</p>
-<pre><code><span class="keyword">def</span> <span class="func">acquire_agent_slot</span>(user_id: str, agent_id: str, max_concurrent: int = <span class="num">3</span>, ttl: int = <span class="num">300</span>) -> bool:
-    key = <span class="string">f"concurrent:{user_id}"</span>
+<pre><code>def acquire_agent_slot(user_id: str, agent_id: str, max_concurrent: int = 3, ttl: int = 300) -&gt; bool:
+    key = f&quot;concurrent:{user_id}&quot;
     now = time.time()
-    client.zremrangebyscore(key, <span class="string">"-inf"</span>, now)  <span class="comment"># Clean expired</span>
+    client.zremrangebyscore(key, &quot;-inf&quot;, now)  # Clean expired
     current = client.zcard(key)
-    <span class="keyword">if</span> current >= max_concurrent:
-        <span class="keyword">return False</span>
+    if current &gt;= max_concurrent:
+        return False
     client.zadd(key, {agent_id: now + ttl})
     client.expire(key, ttl)
-    <span class="keyword">return True</span></code></pre>
-
+    return True
+</code></pre>
 <h2>Step 4: Agent Budget Tracking</h2>
-<pre><code><span class="keyword">def</span> <span class="func">track_agent_spend</span>(agent_id: str, tokens: int, model: str = <span class="string">"gpt-4"</span>):
-    cost_per_1k = {<span class="string">"gpt-4"</span>: <span class="num">0.03</span>, <span class="string">"gpt-4o"</span>: <span class="num">0.005</span>}
-    cost = (tokens / <span class="num">1000</span>) * cost_per_1k.get(model, <span class="num">0.01</span>)
+<pre><code>def track_agent_spend(agent_id: str, tokens: int, model: str = &quot;gpt-4&quot;):
+    cost_per_1k = {&quot;gpt-4&quot;: 0.03, &quot;gpt-4o&quot;: 0.005}
+    cost = (tokens / 1000) * cost_per_1k.get(model, 0.01)
     pipe = client.pipeline()
-    pipe.incrbyfloat(<span class="string">f"agent:spend:{agent_id}:total"</span>, cost)
-    pipe.incrbyfloat(<span class="string">f"agent:spend:{agent_id}:today"</span>, cost)
-    pipe.expire(<span class="string">f"agent:spend:{agent_id}:today"</span>, <span class="num">86400</span>)
-    pipe.execute()</code></pre>
-
-<div class="callout">
+    pipe.incrbyfloat(f&quot;agent:spend:{agent_id}:total&quot;, cost)
+    pipe.incrbyfloat(f&quot;agent:spend:{agent_id}:today&quot;, cost)
+    pipe.expire(f&quot;agent:spend:{agent_id}:today&quot;, 86400)
+    pipe.execute()
+</code></pre>
 <p><strong>Key Patterns:</strong> Call rate limit (Hash token bucket), tool-weighted costs (Lua script), concurrent agents (Sorted Set + TTL), budget tracking (INCRBYFLOAT).</p>
-</div>
+
 
 <div class="nav-prev-next">
-<a href="02-token-aware.html"><span class="label">← Previous</span><span class="title">02 — Token-Aware Limiting</span></a>
-<a href="04-hierarchical.html" class="next"><span class="label">Next →</span><span class="title">04 — Hierarchical Limits</span></a>
+<a href="02-token-aware.html" class="prev"><span class="label">← Previous</span><span class="title">02 — Token-Aware</span></a>
+<a href="04-hierarchical.html" class="next"><span class="label">Next →</span><span class="title">04 — Hierarchical</span></a>
 </div>
 </article>
+<button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg></button>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<script>function toggleTheme(){var b=document.body,l=b.classList.toggle("light");localStorage.setItem("theme",l?"light":"dark")}(function(){if(localStorage.getItem("theme")==="light")document.body.classList.add("light")})()</script>
 </body>
 </html>

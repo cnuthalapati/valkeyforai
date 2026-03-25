@@ -3,203 +3,98 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Monitoring & Observability — Valkey for AI</title>
+<title>06 — Monitoring — Valkey for AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../cookbook.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 <style>
-:root{--accent:#f43f5e}
-.code-block{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:20px;margin:16px 0;font-family:'SF Mono','Fira Code',monospace;font-size:13px;line-height:1.7;overflow-x:auto;white-space:pre-wrap}
-.code-block .cmd{color:#f43f5e}
-.code-block .str{color:#10b981}
-.code-block .num{color:#f59e0b}
-.code-block .comment{color:rgba(245,245,247,.4)}
-.code-block .kw{color:#8b5cf6}
-.section{margin:40px 0}
-.section h2{font-size:24px;font-weight:800;margin-bottom:16px}
-.section p{color:rgba(245,245,247,.7);line-height:1.7;margin-bottom:16px}
-table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px}
-th,td{padding:12px 16px;text-align:left;border-bottom:1px solid rgba(255,255,255,.08)}
-th{color:rgba(245,245,247,.5);font-weight:600;font-size:11px;text-transform:uppercase}
-td{color:rgba(245,245,247,.8)}
-.metric-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:16px;margin:8px 0}
-.metric-card h4{font-size:14px;font-weight:700;color:#f5f5f7;margin-bottom:4px}
-.metric-card p{font-size:12px;color:rgba(245,245,247,.5);margin:0}
-.nav-footer{display:flex;justify-content:space-between;margin-top:48px;padding-top:24px;border-top:1px solid rgba(255,255,255,.08)}
-.nav-footer a{color:#f43f5e;text-decoration:none;font-weight:600;font-size:14px}
+body.light .nav{background:rgba(255,255,255,.9)!important}
+body.light pre{background:rgba(0,0,0,.03)!important;border-color:rgba(0,0,0,.08)!important}
+body.light code{color:#1d1d1f}
+body.light .callout{background:rgba(0,0,0,.02);border-color:rgba(0,0,0,.08)}
+body.light table{border-color:rgba(0,0,0,.08)}
+body.light th{background:rgba(0,0,0,.04)}
+body.light td{border-color:rgba(0,0,0,.06)}
+body.light{--bg:#fff;--bg-elevated:#f5f5f7;--bg-card:rgba(0,0,0,.03);--bg-card-hover:rgba(0,0,0,.06);--brd:rgba(0,0,0,.08);--t1:#1d1d1f;--t2:rgba(29,29,31,.6);--t3:rgba(29,29,31,.4)}
+.theme-toggle{background:rgba(128,128,128,.12);border:1px solid rgba(128,128,128,.2);border-radius:100px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:fixed;top:18px;right:24px;z-index:1001}
+pre{position:relative}
+pre code.hljs{background:transparent!important;padding:0}
 </style>
 </head>
 <body>
-<nav class="nav"><div class="nav-inner">
-<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent" style="color:#f43f5e">for ai</span></a>
-<div class="nav-links"><a href="/cookbooks/rag-pipelines/">All Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div>
-</div></nav>
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/#frameworks">Frameworks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
+<article>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/rag-pipelines/">RAG Pipelines</a> → 06 Monitoring</div>
+<div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~25 min</span></div>
+<h1>Monitoring</h1>
 
-<div style="max-width:800px;margin:0 auto;padding:48px 24px">
-<a href="/cookbooks/rag-pipelines/" style="color:#f43f5e;font-size:13px;text-decoration:none">← All RAG Cookbooks</a>
 
-<h1 style="font-size:36px;font-weight:900;margin:24px 0 12px">Monitoring & <span style="background:linear-gradient(135deg,#f43f5e,#e11d48);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Observability</span></h1>
-<p style="color:rgba(245,245,247,.6);font-size:16px;margin-bottom:32px">Track cache performance, search latencies, and system health in production.</p>
-
-<div class="section">
+<p><a href="/cookbooks/rag-pipelines/">← All RAG Cookbooks</a></p>
+<h1>Monitoring &amp; Observability</h1>
+<p>Track cache performance, search latencies, and system health in production.</p>
 <h2>Key Metrics to Track</h2>
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-<div class="metric-card"><h4>Cache Hit Rate</h4><p>Target: >80% for FAQ, >60% for RAG</p></div>
-<div class="metric-card"><h4>Search Latency (p99)</h4><p>Target: <10ms for HNSW</p></div>
-<div class="metric-card"><h4>Memory Usage</h4><p>Alert at 80% of maxmemory</p></div>
-<div class="metric-card"><h4>Connected Clients</h4><p>Monitor for connection leaks</p></div>
-</div>
-</div>
-
-<div class="section">
+<h4>Cache Hit Rate</h4>
+<p>Target: &gt;80% for FAQ, &gt;60% for RAG</p>
+<h4>Search Latency (p99)</h4>
+<p>Target: &lt;10ms for HNSW</p>
+<h4>Memory Usage</h4>
+<p>Alert at 80% of maxmemory</p>
+<h4>Connected Clients</h4>
+<p>Monitor for connection leaks</p>
 <h2>Built-in INFO Command</h2>
-<div class="code-block"><span class="comment"># Get all stats</span>
-<span class="cmd">INFO</span>
-
-<span class="comment"># Specific sections</span>
-<span class="cmd">INFO</span> memory
-<span class="cmd">INFO</span> stats
-<span class="cmd">INFO</span> clients
-
-<span class="comment"># Search module stats</span>
-<span class="cmd">FT.INFO</span> idx:docs</div>
-</div>
-
-<div class="section">
+<h1>Get all stats INFO # Specific sections INFO memory INFO stats INFO clients # Search module stats FT.INFO idx:docs</h1>
 <h2>Application-Level Metrics</h2>
-<div class="code-block"><span class="kw">import</span> time
-<span class="kw">from</span> dataclasses <span class="kw">import</span> dataclass, field
-
-<span class="kw">@dataclass</span>
-<span class="kw">class</span> CacheMetrics:
-    hits: int = <span class="num">0</span>
-    misses: int = <span class="num">0</span>
-    hit_latencies: list = field(default_factory=list)
-    miss_latencies: list = field(default_factory=list)
-    
-    <span class="kw">@property</span>
-    <span class="kw">def</span> hit_rate(self):
-        total = self.hits + self.misses
-        <span class="kw">return</span> self.hits / total <span class="kw">if</span> total > <span class="num">0</span> <span class="kw">else</span> <span class="num">0</span>
-    
-    <span class="kw">@property</span>
-    <span class="kw">def</span> avg_hit_latency(self):
-        <span class="kw">return</span> sum(self.hit_latencies) / len(self.hit_latencies) <span class="kw">if</span> self.hit_latencies <span class="kw">else</span> <span class="num">0</span>
-
-metrics = CacheMetrics()
-
-<span class="kw">async def</span> cached_query(query):
-    start = time.perf_counter()
-    result = <span class="kw">await</span> cache.lookup(query)
-    latency = (time.perf_counter() - start) * <span class="num">1000</span>
-    
-    <span class="kw">if</span> result:
-        metrics.hits += <span class="num">1</span>
-        metrics.hit_latencies.append(latency)
-    <span class="kw">else</span>:
-        metrics.misses += <span class="num">1</span>
-        metrics.miss_latencies.append(latency)
-    
-    <span class="kw">return</span> result</div>
-</div>
-
-<div class="section">
+<p>import time from dataclasses import dataclass, field @dataclass class CacheMetrics: hits: int = 0 misses: int = 0 hit_latencies: list = field(default_factory=list) miss_latencies: list = field(default_factory=list) @property def hit_rate(self): total = self.hits + self.misses return self.hits / total if total &gt; 0 else 0 @property def avg_hit_latency(self): return sum(self.hit_latencies) / len(self.hit_latencies) if self.hit_latencies else 0 metrics = CacheMetrics() async def cached_query(query): start = time.perf_counter() result = await cache.lookup(query) latency = (time.perf_counter() - start) * 1000 if result: metrics.hits += 1 metrics.hit_latencies.append(latency) else: metrics.misses += 1 metrics.miss_latencies.append(latency) return result</p>
 <h2>Prometheus Integration</h2>
-<div class="code-block"><span class="kw">from</span> prometheus_client <span class="kw">import</span> Counter, Histogram, Gauge
-
-<span class="comment"># Define metrics</span>
-cache_hits = Counter(<span class="str">'rag_cache_hits_total'</span>, <span class="str">'Cache hits'</span>)
-cache_misses = Counter(<span class="str">'rag_cache_misses_total'</span>, <span class="str">'Cache misses'</span>)
-search_latency = Histogram(
-    <span class="str">'rag_search_seconds'</span>,
-    <span class="str">'Search latency'</span>,
-    buckets=[.<span class="num">001</span>, .<span class="num">005</span>, .<span class="num">01</span>, .<span class="num">05</span>, .<span class="num">1</span>, .<span class="num">5</span>, <span class="num">1</span>]
-)
-vector_count = Gauge(<span class="str">'rag_vectors_total'</span>, <span class="str">'Total vectors'</span>)
-
-<span class="comment"># Usage</span>
-<span class="kw">with</span> search_latency.time():
-    results = <span class="kw">await</span> vector_store.search(query)
-
-<span class="kw">if</span> cache_hit:
-    cache_hits.inc()
-<span class="kw">else</span>:
-    cache_misses.inc()</div>
-</div>
-
-<div class="section">
+<p>from prometheus_client import Counter, Histogram, Gauge # Define metrics cache_hits = Counter(&#39;rag_cache_hits_total&#39;, &#39;Cache hits&#39;) cache_misses = Counter(&#39;rag_cache_misses_total&#39;, &#39;Cache misses&#39;) search_latency = Histogram( &#39;rag_search_seconds&#39;, &#39;Search latency&#39;, buckets=[.001, .005, .01, .05, .1, .5, 1] ) vector_count = Gauge(&#39;rag_vectors_total&#39;, &#39;Total vectors&#39;) # Usage with search_latency.time(): results = await vector_store.search(query) if cache_hit: cache_hits.inc() else: cache_misses.inc()</p>
 <h2>Logging Best Practices</h2>
-<div class="code-block"><span class="kw">import</span> structlog
-
-log = structlog.get_logger()
-
-<span class="kw">async def</span> search_with_logging(query, user_id):
-    start = time.perf_counter()
-    
-    <span class="kw">try</span>:
-        results = <span class="kw">await</span> cache.lookup(query)
-        latency_ms = (time.perf_counter() - start) * <span class="num">1000</span>
-        
-        log.info(
-            <span class="str">"cache_lookup"</span>,
-            user_id=user_id,
-            query_length=len(query),
-            cache_hit=results <span class="kw">is not None</span>,
-            latency_ms=round(latency_ms, <span class="num">2</span>),
-            result_count=len(results) <span class="kw">if</span> results <span class="kw">else</span> <span class="num">0</span>
-        )
-        <span class="kw">return</span> results
-        
-    <span class="kw">except</span> Exception <span class="kw">as</span> e:
-        log.error(<span class="str">"cache_error"</span>, error=str(e), query=query[:<span class="num">50</span>])
-        <span class="kw">raise</span></div>
-</div>
-
-<div class="section">
+<p>import structlog log = structlog.get_logger() async def search_with_logging(query, user_id): start = time.perf_counter() try: results = await cache.lookup(query) latency_ms = (time.perf_counter() - start) * 1000 log.info( &quot;cache_lookup&quot;, user_id=user_id, query_length=len(query), cache_hit=results is not None, latency_ms=round(latency_ms, 2), result_count=len(results) if results else 0 ) return results except Exception as e: log.error(&quot;cache_error&quot;, error=str(e), query=query[:50]) raise</p>
 <h2>Health Check Endpoint</h2>
-<div class="code-block"><span class="kw">@app.get</span>(<span class="str">"/health"</span>)
-<span class="kw">async def</span> health_check():
-    <span class="kw">try</span>:
-        <span class="comment"># Check Valkey connection</span>
-        client.ping()
-        
-        <span class="comment"># Check index exists</span>
-        info = client.ft(<span class="str">"idx:docs"</span>).info()
-        
-        <span class="kw">return</span> {
-            <span class="str">"status"</span>: <span class="str">"healthy"</span>,
-            <span class="str">"valkey"</span>: <span class="str">"connected"</span>,
-            <span class="str">"index_docs"</span>: info[<span class="str">"num_docs"</span>],
-            <span class="str">"cache_hit_rate"</span>: f<span class="str">"{metrics.hit_rate:.1%}"</span>,
-            <span class="str">"avg_latency_ms"</span>: round(metrics.avg_hit_latency, <span class="num">2</span>)
-        }
-    <span class="kw">except</span> Exception <span class="kw">as</span> e:
-        <span class="kw">return</span> {<span class="str">"status"</span>: <span class="str">"unhealthy"</span>, <span class="str">"error"</span>: str(e)}</div>
-</div>
-
-<div class="section">
+<p>@app.get(&quot;/health&quot;) async def health_check(): try: # Check Valkey connection client.ping() # Check index exists info = client.ft(&quot;idx:docs&quot;).info() return { &quot;status&quot;: &quot;healthy&quot;, &quot;valkey&quot;: &quot;connected&quot;, &quot;index_docs&quot;: info[&quot;num_docs&quot;], &quot;cache_hit_rate&quot;: f&quot;{metrics.hit_rate:.1%}&quot;, &quot;avg_latency_ms&quot;: round(metrics.avg_hit_latency, 2) } except Exception as e: return {&quot;status&quot;: &quot;unhealthy&quot;, &quot;error&quot;: str(e)}</p>
 <h2>Alert Thresholds</h2>
 <table>
-<tr><th>Metric</th><th>Warning</th><th>Critical</th></tr>
-<tr><td>Cache Hit Rate</td><td>&lt;70%</td><td>&lt;50%</td></tr>
-<tr><td>Search Latency p99</td><td>&gt;50ms</td><td>&gt;200ms</td></tr>
-<tr><td>Memory Usage</td><td>&gt;75%</td><td>&gt;90%</td></tr>
-<tr><td>Error Rate</td><td>&gt;1%</td><td>&gt;5%</td></tr>
-</table>
-</div>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Warning</th>
+<th>Critical</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Cache Hit Rate</td>
+<td>&lt;70%</td>
+<td>&lt;50%</td>
+</tr>
+<tr>
+<td>Search Latency p99</td>
+<td>&gt;50ms</td>
+<td>&gt;200ms</td>
+</tr>
+<tr>
+<td>Memory Usage</td>
+<td>&gt;75%</td>
+<td>&gt;90%</td>
+</tr>
+<tr>
+<td>Error Rate</td>
+<td>&gt;1%</td>
+<td>&gt;5%</td>
+</tr>
+</tbody></table>
+<h3>🎉 Cookbook Complete!</h3>
+<p>You&#39;ve learned the fundamentals of RAG with Valkey. Ready to build?</p>
+<p><a href="/demo/rag-pipeline.html">Try the Demo →</a> <a href="https://github.com/meet-bhagdev/valkeyforai">View on GitHub →</a></p>
+<p><a href="05-scaling-production.html">← Scaling</a> <a href="/cookbooks/rag-pipelines/">All Cookbooks</a></p>
 
-<div style="margin-top:48px;padding:24px;background:linear-gradient(135deg,rgba(16,185,129,.1),rgba(59,130,246,.1));border:1px solid rgba(16,185,129,.2);border-radius:12px;text-align:center">
-<h3 style="font-size:18px;font-weight:800;margin-bottom:8px">🎉 Cookbook Complete!</h3>
-<p style="color:rgba(245,245,247,.6);font-size:14px;margin-bottom:16px">You've learned the fundamentals of RAG with Valkey. Ready to build?</p>
-<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-<a href="/demo/rag-pipeline.html" style="padding:10px 20px;background:linear-gradient(135deg,#f43f5e,#e11d48);color:#fff;border-radius:8px;font-weight:600;font-size:13px;text-decoration:none">Try the Demo →</a>
-<a href="https://github.com/meet-bhagdev/valkeyforai" style="padding:10px 20px;background:rgba(255,255,255,.1);color:#f5f5f7;border-radius:8px;font-weight:600;font-size:13px;text-decoration:none">View on GitHub →</a>
-</div>
-</div>
 
-<div class="nav-footer">
-<a href="05-scaling-production.html">← Scaling</a>
-<a href="/cookbooks/rag-pipelines/">All Cookbooks</a>
+<div class="nav-prev-next">
+<a href="05-scaling-production.html" class="prev"><span class="label">← Previous</span><span class="title">05 — Scaling</span></a>
+<div></div>
 </div>
-</div>
+</article>
+<button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg></button>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<script>function toggleTheme(){var b=document.body,l=b.classList.toggle("light");localStorage.setItem("theme",l?"light":"dark")}(function(){if(localStorage.getItem("theme")==="light")document.body.classList.add("light")})()</script>
 </body>
 </html>

@@ -6,148 +6,173 @@
 <title>02 — Token-Aware Rate Limiting — Valkey for AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../cookbook.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<style>
+body.light .nav{background:rgba(255,255,255,.9)!important}
+body.light pre{background:rgba(0,0,0,.03)!important;border-color:rgba(0,0,0,.08)!important}
+body.light code{color:#1d1d1f}
+body.light .callout{background:rgba(0,0,0,.02);border-color:rgba(0,0,0,.08)}
+body.light table{border-color:rgba(0,0,0,.08)}
+body.light th{background:rgba(0,0,0,.04)}
+body.light td{border-color:rgba(0,0,0,.06)}
+body.light{--bg:#fff;--bg-elevated:#f5f5f7;--bg-card:rgba(0,0,0,.03);--bg-card-hover:rgba(0,0,0,.06);--brd:rgba(0,0,0,.08);--t1:#1d1d1f;--t2:rgba(29,29,31,.6);--t3:rgba(29,29,31,.4)}
+.theme-toggle{background:rgba(128,128,128,.12);border:1px solid rgba(128,128,128,.2);border-radius:100px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:fixed;top:18px;right:24px;z-index:1001}
+pre{position:relative}
+pre code.hljs{background:transparent!important;padding:0}
+</style>
 </head>
 <body>
-<nav class="nav"><div class="nav-inner">
-<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
-<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/rate-limiting/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div>
-</div></nav>
-
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/#frameworks">Frameworks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
 <article>
 <div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/rate-limiting/">Rate Limiting</a> → 02 Token-Aware</div>
-<div class="meta"><span class="diff-mid">Intermediate</span><span class="lang">Python</span><span class="lang">~15 min</span></div>
+<div class="meta"><span class="diff-medium">Intermediate</span><span class="lang">Python</span><span class="lang">~20 min</span></div>
+<h1>Token-Aware Rate Limiting</h1>
 
-<h1>Token-Aware <span class="gradient">Limiting</span></h1>
-<p class="lead">Traditional rate limiters count requests. AI workloads need to count <strong>tokens</strong> — a single request might consume 50 tokens or 50,000.</p>
 
 <h2>The Problem</h2>
 <pre><code>User makes 3 requests:
-  Request 1: "Hi" → 5 tokens
-  Request 2: "Summarize this 200-page PDF" → 45,000 tokens
-  Request 3: "Thanks" → 3 tokens
+  Request 1: &quot;Hi&quot; → 5 tokens
+  Request 2: &quot;Summarize this 200-page PDF&quot; → 45,000 tokens
+  Request 3: &quot;Thanks&quot; → 3 tokens
 
-A request-based limiter treats all 3 the same. That's wrong.</code></pre>
-
+A request-based limiter treats all 3 the same. That&#39;s wrong.
+</code></pre>
 <h2>Step 1: Count Tokens Before Calling the LLM</h2>
-<pre><code><span class="keyword">import</span> tiktoken
+<pre><code>import tiktoken
 
-<span class="keyword">def</span> <span class="func">count_tokens</span>(text: str, model: str = <span class="string">"gpt-4"</span>) -> int:
-    <span class="string">"""Count tokens using tiktoken (OpenAI's tokenizer)."""</span>
-    <span class="keyword">try</span>:
+def count_tokens(text: str, model: str = &quot;gpt-4&quot;) -&gt; int:
+    &quot;&quot;&quot;Count tokens using tiktoken (OpenAI&#39;s tokenizer).&quot;&quot;&quot;
+    try:
         enc = tiktoken.encoding_for_model(model)
-    <span class="keyword">except</span> KeyError:
-        enc = tiktoken.get_encoding(<span class="string">"cl100k_base"</span>)
-    <span class="keyword">return</span> <span class="func">len</span>(enc.encode(text))
+    except KeyError:
+        enc = tiktoken.get_encoding(&quot;cl100k_base&quot;)
+    return len(enc.encode(text))
 
-<span class="comment"># Examples</span>
-<span class="func">print</span>(count_tokens(<span class="string">"Hello world"</span>))           <span class="comment"># ~2</span>
-<span class="func">print</span>(count_tokens(<span class="string">"Explain quantum physics in detail"</span>))  <span class="comment"># ~6</span></code></pre>
-
+# Examples
+print(count_tokens(&quot;Hello world&quot;))           # ~2
+print(count_tokens(&quot;Explain quantum physics in detail&quot;))  # ~6
+</code></pre>
 <h2>Step 2: Token-Aware Fixed Window</h2>
-<pre><code><span class="keyword">import</span> redis
-<span class="keyword">import</span> time
+<pre><code>import redis
+import time
 
-client = redis.Redis(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>, decode_responses=<span class="keyword">True</span>)
+client = redis.Redis(host=&quot;localhost&quot;, port=6379, decode_responses=True)
 
-<span class="keyword">def</span> <span class="func">check_token_limit</span>(
+def check_token_limit(
     identifier: str,
     input_tokens: int,
-    max_tokens: int = <span class="num">100_000</span>,
-    window: int = <span class="num">60</span>,
-) -> dict:
-    <span class="string">"""Rate limit by token consumption per window."""</span>
-    window_num = <span class="func">int</span>(time.time() // window)
-    key = <span class="string">f"tl:{identifier}:tok:{window_num}"</span>
+    max_tokens: int = 100_000,
+    window: int = 60,
+) -&gt; dict:
+    &quot;&quot;&quot;Rate limit by token consumption per window.&quot;&quot;&quot;
+    window_num = int(time.time() // window)
+    key = f&quot;tl:{identifier}:tok:{window_num}&quot;
 
-    <span class="comment"># Atomic: get current count, then increment</span>
-    pipe = client.pipeline(transaction=<span class="keyword">True</span>)
+    # Atomic: get current count, then increment
+    pipe = client.pipeline(transaction=True)
     pipe.get(key)
     pipe.incrby(key, input_tokens)
     pipe.expire(key, window)
     results = pipe.execute()
 
-    current_before = <span class="func">int</span>(results[<span class="num">0</span>] <span class="keyword">or</span> <span class="num">0</span>)
-    allowed = current_before + input_tokens <= max_tokens
+    current_before = int(results[0] or 0)
+    allowed = current_before + input_tokens &lt;= max_tokens
 
-    <span class="keyword">if not</span> allowed:
-        client.decrby(key, input_tokens)  <span class="comment"># Rollback</span>
+    if not allowed:
+        client.decrby(key, input_tokens)  # Rollback
 
-    <span class="keyword">return</span> {
-        <span class="string">"allowed"</span>: allowed,
-        <span class="string">"tokens_used"</span>: current_before,
-        <span class="string">"tokens_remaining"</span>: <span class="func">max</span>(<span class="num">0</span>, max_tokens - current_before),
-        <span class="string">"max_tokens"</span>: max_tokens,
-    }</code></pre>
-
+    return {
+        &quot;allowed&quot;: allowed,
+        &quot;tokens_used&quot;: current_before,
+        &quot;tokens_remaining&quot;: max(0, max_tokens - current_before),
+        &quot;max_tokens&quot;: max_tokens,
+    }
+</code></pre>
 <h2>Step 3: Dual Limiting (Requests + Tokens)</h2>
-<p>Most production systems limit <strong>both</strong> — you don't want a user making 10,000 tiny requests either:</p>
-<pre><code><span class="keyword">def</span> <span class="func">dual_limit_check</span>(
+<p>Most production systems limit <strong>both</strong> — you don&#39;t want a user making 10,000 tiny requests either:</p>
+<pre><code>def dual_limit_check(
     identifier: str,
     tokens: int,
-    max_requests: int = <span class="num">60</span>,
-    max_tokens: int = <span class="num">100_000</span>,
-    window: int = <span class="num">60</span>,
-) -> dict:
-    <span class="string">"""Limit by both request count AND token count."""</span>
-    window_num = <span class="func">int</span>(time.time() // window)
-    req_key = <span class="string">f"dl:{identifier}:req:{window_num}"</span>
-    tok_key = <span class="string">f"dl:{identifier}:tok:{window_num}"</span>
+    max_requests: int = 60,
+    max_tokens: int = 100_000,
+    window: int = 60,
+) -&gt; dict:
+    &quot;&quot;&quot;Limit by both request count AND token count.&quot;&quot;&quot;
+    window_num = int(time.time() // window)
+    req_key = f&quot;dl:{identifier}:req:{window_num}&quot;
+    tok_key = f&quot;dl:{identifier}:tok:{window_num}&quot;
 
-    pipe = client.pipeline(transaction=<span class="keyword">True</span>)
+    pipe = client.pipeline(transaction=True)
     pipe.incr(req_key)
     pipe.expire(req_key, window)
     pipe.incrby(tok_key, tokens)
     pipe.expire(tok_key, window)
     results = pipe.execute()
 
-    req_count = results[<span class="num">0</span>]
-    tok_count = results[<span class="num">2</span>]
+    req_count = results[0]
+    tok_count = results[2]
 
-    req_ok = req_count <= max_requests
-    tok_ok = tok_count <= max_tokens
-    allowed = req_ok <span class="keyword">and</span> tok_ok
+    req_ok = req_count &lt;= max_requests
+    tok_ok = tok_count &lt;= max_tokens
+    allowed = req_ok and tok_ok
 
-    blocked_by = <span class="keyword">None</span>
-    <span class="keyword">if not</span> req_ok: blocked_by = <span class="string">"requests"</span>
-    <span class="keyword">elif not</span> tok_ok: blocked_by = <span class="string">"tokens"</span>
+    blocked_by = None
+    if not req_ok: blocked_by = &quot;requests&quot;
+    elif not tok_ok: blocked_by = &quot;tokens&quot;
 
-    <span class="keyword">return</span> {
-        <span class="string">"allowed"</span>: allowed,
-        <span class="string">"blocked_by"</span>: blocked_by,
-        <span class="string">"requests"</span>: <span class="string">f"{req_count}/{max_requests}"</span>,
-        <span class="string">"tokens"</span>: <span class="string">f"{tok_count}/{max_tokens}"</span>,
-    }</code></pre>
-
+    return {
+        &quot;allowed&quot;: allowed,
+        &quot;blocked_by&quot;: blocked_by,
+        &quot;requests&quot;: f&quot;{req_count}/{max_requests}&quot;,
+        &quot;tokens&quot;: f&quot;{tok_count}/{max_tokens}&quot;,
+    }
+</code></pre>
 <h2>Step 4: Estimate Output Tokens</h2>
-<p>Input tokens are known. Output tokens aren't — but you can <strong>estimate</strong> them and adjust after:</p>
+<p>Input tokens are known. Output tokens aren&#39;t — but you can <strong>estimate</strong> them and adjust after:</p>
 <pre><code>OUTPUT_MULTIPLIERS = {
-    <span class="string">"gpt-4"</span>: <span class="num">1.5</span>,
-    <span class="string">"gpt-4o"</span>: <span class="num">1.2</span>,
-    <span class="string">"gpt-3.5-turbo"</span>: <span class="num">1.0</span>,
-    <span class="string">"claude-3-sonnet"</span>: <span class="num">1.3</span>,
+    &quot;gpt-4&quot;: 1.5,
+    &quot;gpt-4o&quot;: 1.2,
+    &quot;gpt-3.5-turbo&quot;: 1.0,
+    &quot;claude-3-sonnet&quot;: 1.3,
 }
 
-<span class="keyword">def</span> <span class="func">estimate_total_tokens</span>(input_tokens: int, model: str) -> int:
-    multiplier = OUTPUT_MULTIPLIERS.get(model, <span class="num">1.2</span>)
-    estimated_output = <span class="func">int</span>(input_tokens * multiplier)
-    <span class="keyword">return</span> input_tokens + estimated_output</code></pre>
-
-<div class="callout">
+def estimate_total_tokens(input_tokens: int, model: str) -&gt; int:
+    multiplier = OUTPUT_MULTIPLIERS.get(model, 1.2)
+    estimated_output = int(input_tokens * multiplier)
+    return input_tokens + estimated_output
+</code></pre>
 <p><strong>Pro Tip:</strong> Pre-estimate before the LLM call, then adjust with actual usage after. This gives you accurate budget tracking while still gating before the expensive call happens.</p>
-</div>
-
 <h2>Key Takeaways</h2>
 <table>
-<tr><th>Pattern</th><th>When to Use</th></tr>
-<tr><td>Token-only limiting</td><td>When request count doesn't matter (batch jobs)</td></tr>
-<tr><td>Dual (request + token)</td><td>Production API gateways</td></tr>
-<tr><td>Pre-estimate + post-adjust</td><td>High-accuracy budget tracking</td></tr>
-</table>
+<thead>
+<tr>
+<th>Pattern</th>
+<th>When to Use</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Token-only limiting</td>
+<td>When request count doesn&#39;t matter (batch jobs)</td>
+</tr>
+<tr>
+<td>Dual (request + token)</td>
+<td>Production API gateways</td>
+</tr>
+<tr>
+<td>Pre-estimate + post-adjust</td>
+<td>High-accuracy budget tracking</td>
+</tr>
+</tbody></table>
+
 
 <div class="nav-prev-next">
-<a href="01-getting-started.html"><span class="label">← Previous</span><span class="title">01 — Getting Started</span></a>
-<a href="03-agent-limiting.html" class="next"><span class="label">Next →</span><span class="title">03 — Agent Rate Limiting</span></a>
+<a href="01-getting-started.html" class="prev"><span class="label">← Previous</span><span class="title">01 — Getting Started</span></a>
+<a href="03-agent-limiting.html" class="next"><span class="label">Next →</span><span class="title">03 — Agent Limiting</span></a>
 </div>
 </article>
+<button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg></button>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<script>function toggleTheme(){var b=document.body,l=b.classList.toggle("light");localStorage.setItem("theme",l?"light":"dark")}(function(){if(localStorage.getItem("theme")==="light")document.body.classList.add("light")})()</script>
 </body>
 </html>

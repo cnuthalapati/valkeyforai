@@ -3,214 +3,276 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>05 Agent State — Conversation Memory — Valkey for AI</title>
+<title>05 — Agent State — Valkey for AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../cookbook.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<style>
+body.light .nav{background:rgba(255,255,255,.9)!important}
+body.light pre{background:rgba(0,0,0,.03)!important;border-color:rgba(0,0,0,.08)!important}
+body.light code{color:#1d1d1f}
+body.light .callout{background:rgba(0,0,0,.02);border-color:rgba(0,0,0,.08)}
+body.light table{border-color:rgba(0,0,0,.08)}
+body.light th{background:rgba(0,0,0,.04)}
+body.light td{border-color:rgba(0,0,0,.06)}
+body.light{--bg:#fff;--bg-elevated:#f5f5f7;--bg-card:rgba(0,0,0,.03);--bg-card-hover:rgba(0,0,0,.06);--brd:rgba(0,0,0,.08);--t1:#1d1d1f;--t2:rgba(29,29,31,.6);--t3:rgba(29,29,31,.4)}
+.theme-toggle{background:rgba(128,128,128,.12);border:1px solid rgba(128,128,128,.2);border-radius:100px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:fixed;top:18px;right:24px;z-index:1001}
+pre{position:relative}
+pre code.hljs{background:transparent!important;padding:0}
+</style>
 </head>
 <body>
-<nav class="nav"><div class="nav-inner">
-<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
-<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/conversation-memory/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div>
-</div></nav>
-
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/#frameworks">Frameworks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
 <article>
 <div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/conversation-memory/">Conversation Memory</a> → 05 Agent State</div>
 <div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~25 min</span></div>
+<h1>Agent State</h1>
 
-<h1>Agent State &amp; <span class="gradient">Tool Results</span></h1>
-<p class="lead">Checkpoint agent reasoning with Valkey Hashes, cache expensive tool outputs with Strings, and log every action to a Stream for replay and debugging.</p>
 
 <h2>The Problem</h2>
 <p>AI agents run multi-step workflows: plan → search → analyze → respond. If the process crashes at step 3, you lose everything and start over. Worse, if the agent calls the same expensive tool twice, you pay double. You need:</p>
 <ul>
 <li><strong>Checkpointing</strong> — save state after each step, resume on failure</li>
-<li><strong>Tool result caching</strong> — don't call the same API twice</li>
+<li><strong>Tool result caching</strong> — don&#39;t call the same API twice</li>
 <li><strong>Activity log</strong> — ordered record of what happened and when</li>
 </ul>
-
 <h2>Three Valkey Patterns, One Agent</h2>
-<pre><code><span class="comment">┌─────────────────────────────────────────────────────────┐</span>
-<span class="comment">│                    Valkey Server                        │</span>
-<span class="comment">│                                                         │</span>
-<span class="comment">│  HASH  agent:state:{run_id}  → Checkpoint (current step,│</span>
-<span class="comment">│                                 intermediate results)   │</span>
-<span class="comment">│                                                         │</span>
-<span class="comment">│  STRING tool:cache:{hash}    → Cached tool outputs      │</span>
-<span class="comment">│         (with TTL)              (avoid duplicate calls)  │</span>
-<span class="comment">│                                                         │</span>
-<span class="comment">│  STREAM agent:log:{run_id}   → Ordered event log        │</span>
-<span class="comment">│                                 (replay & debugging)     │</span>
-<span class="comment">└─────────────────────────────────────────────────────────┘</span></code></pre>
-
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│                    Valkey Server                        │
+│                                                         │
+│  HASH  agent:state:{run_id}  → Checkpoint (current step,│
+│                                 intermediate results)   │
+│                                                         │
+│  STRING tool:cache:{hash}    → Cached tool outputs      │
+│         (with TTL)              (avoid duplicate calls)  │
+│                                                         │
+│  STREAM agent:log:{run_id}   → Ordered event log        │
+│                                 (replay &amp; debugging)     │
+└─────────────────────────────────────────────────────────┘
+</code></pre>
 <h2>Pattern 1: Agent Checkpointing with HASH</h2>
-<p>Save the agent's state after each step. If it crashes, resume from the last checkpoint.</p>
-<pre><code><span class="keyword">import</span> json
-<span class="keyword">from</span> glide <span class="keyword">import</span> GlideClient, GlideClientConfiguration, NodeAddress
+<p>Save the agent&#39;s state after each step. If it crashes, resume from the last checkpoint.</p>
+<pre><code>import json
+from glide import GlideClient, GlideClientConfiguration, NodeAddress
 
-<span class="keyword">async def</span> <span class="func">save_checkpoint</span>(client, run_id, step, data):
-    <span class="string">"""Save agent state after completing a step."""</span>
-    key = <span class="string">f"agent:state:</span>{run_id}<span class="string">"</span>
-    <span class="keyword">await</span> client.hset(key, {
-        <span class="string">"current_step"</span>: str(step),
-        <span class="string">"status"</span>: <span class="string">"in_progress"</span>,
-        <span class="string">f"result_step_</span>{step}<span class="string">"</span>: json.dumps(data),
-        <span class="string">"updated_at"</span>: str(time.time()),
+async def save_checkpoint(client, run_id, step, data):
+    &quot;&quot;&quot;Save agent state after completing a step.&quot;&quot;&quot;
+    key = f&quot;agent:state:{run_id}&quot;
+    await client.hset(key, {
+        &quot;current_step&quot;: str(step),
+        &quot;status&quot;: &quot;in_progress&quot;,
+        f&quot;result_step_{step}&quot;: json.dumps(data),
+        &quot;updated_at&quot;: str(time.time()),
     })
-    <span class="keyword">await</span> client.expire(key, <span class="num">86400</span>)  <span class="comment"># 24h TTL</span>
+    await client.expire(key, 86400)  # 24h TTL
 
 
-<span class="keyword">async def</span> <span class="func">load_checkpoint</span>(client, run_id):
-    <span class="string">"""Load the last checkpoint to resume."""</span>
-    key = <span class="string">f"agent:state:</span>{run_id}<span class="string">"</span>
-    state = <span class="keyword">await</span> client.hgetall(key)
-    <span class="keyword">if not</span> state:
-        <span class="keyword">return None</span>
-    <span class="keyword">return</span> {k.decode(): v.decode() <span class="keyword">for</span> k, v <span class="keyword">in</span> state.items()}
+async def load_checkpoint(client, run_id):
+    &quot;&quot;&quot;Load the last checkpoint to resume.&quot;&quot;&quot;
+    key = f&quot;agent:state:{run_id}&quot;
+    state = await client.hgetall(key)
+    if not state:
+        return None
+    return {k.decode(): v.decode() for k, v in state.items()}
 
 
-<span class="keyword">async def</span> <span class="func">mark_complete</span>(client, run_id):
-    <span class="keyword">await</span> client.hset(<span class="string">f"agent:state:</span>{run_id}<span class="string">"</span>, {<span class="string">"status"</span>: <span class="string">"complete"</span>})</code></pre>
-
+async def mark_complete(client, run_id):
+    await client.hset(f&quot;agent:state:{run_id}&quot;, {&quot;status&quot;: &quot;complete&quot;})
+</code></pre>
 <h2>Pattern 2: Tool Result Caching with STRING</h2>
-<p>Cache expensive tool outputs (API calls, web searches, database queries) so the agent doesn't repeat them.</p>
-<pre><code><span class="keyword">import</span> hashlib
+<p>Cache expensive tool outputs (API calls, web searches, database queries) so the agent doesn&#39;t repeat them.</p>
+<pre><code>import hashlib
 
-<span class="keyword">async def</span> <span class="func">cached_tool_call</span>(client, tool_name, args, tool_fn, ttl=<span class="num">300</span>):
-    <span class="string">"""Call a tool, caching the result in Valkey."""</span>
-    <span class="comment"># Create a cache key from tool name + arguments</span>
-    args_hash = hashlib.md5(json.dumps(args, sort_keys=<span class="keyword">True</span>).encode()).hexdigest()[:<span class="num">12</span>]
-    cache_key = <span class="string">f"tool:cache:</span>{tool_name}<span class="string">:</span>{args_hash}<span class="string">"</span>
+async def cached_tool_call(client, tool_name, args, tool_fn, ttl=300):
+    &quot;&quot;&quot;Call a tool, caching the result in Valkey.&quot;&quot;&quot;
+    # Create a cache key from tool name + arguments
+    args_hash = hashlib.md5(json.dumps(args, sort_keys=True).encode()).hexdigest()[:12]
+    cache_key = f&quot;tool:cache:{tool_name}:{args_hash}&quot;
 
-    <span class="comment"># Check cache first</span>
-    cached = <span class="keyword">await</span> client.get(cache_key)
-    <span class="keyword">if</span> cached:
-        print(<span class="string">f"⚡ Tool cache HIT: {tool_name}"</span>)
-        <span class="keyword">return</span> json.loads(cached)
+    # Check cache first
+    cached = await client.get(cache_key)
+    if cached:
+        print(f&quot;⚡ Tool cache HIT: {tool_name}&quot;)
+        return json.loads(cached)
 
-    <span class="comment"># Cache miss — call the tool</span>
-    print(<span class="string">f"🔄 Tool cache MISS: {tool_name} — calling..."</span>)
+    # Cache miss — call the tool
+    print(f&quot;🔄 Tool cache MISS: {tool_name} — calling...&quot;)
     result = tool_fn(**args)
 
-    <span class="comment"># Store with TTL</span>
-    <span class="keyword">await</span> client.set(cache_key, json.dumps(result))
-    <span class="keyword">await</span> client.expire(cache_key, ttl)
+    # Store with TTL
+    await client.set(cache_key, json.dumps(result))
+    await client.expire(cache_key, ttl)
 
-    <span class="keyword">return</span> result
+    return result
 
 
-<span class="comment"># Usage</span>
-result = <span class="keyword">await</span> cached_tool_call(
-    client, <span class="string">"web_search"</span>,
-    {<span class="string">"query"</span>: <span class="string">"Valkey vector search benchmarks"</span>},
+# Usage
+result = await cached_tool_call(
+    client, &quot;web_search&quot;,
+    {&quot;query&quot;: &quot;Valkey vector search benchmarks&quot;},
     tool_fn=web_search,
-    ttl=<span class="num">600</span>,  <span class="comment"># cache for 10 minutes</span>
-)</code></pre>
-
-<div class="callout">
+    ttl=600,  # cache for 10 minutes
+)
+</code></pre>
 <p><strong>Key Insight:</strong> <code>SET key value EX ttl</code> is the simplest caching pattern in Valkey. For tool results, the TTL should match how quickly the data goes stale — 5 minutes for web searches, 1 hour for database queries, 24 hours for static lookups.</p>
-</div>
-
 <h2>Pattern 3: Activity Log with STREAM</h2>
 <p>Log every agent action to a Valkey Stream. This creates an ordered, persistent audit trail for debugging and replay.</p>
-<pre><code><span class="keyword">async def</span> <span class="func">log_action</span>(client, run_id, action, details):
-    <span class="string">"""Append an action to the agent's activity log."""</span>
-    stream_key = <span class="string">f"agent:log:</span>{run_id}<span class="string">"</span>
-    <span class="keyword">await</span> client.xadd(stream_key, [
-        (<span class="string">"action"</span>, action),
-        (<span class="string">"details"</span>, json.dumps(details)),
-        (<span class="string">"ts"</span>, str(time.time())),
+<pre><code>async def log_action(client, run_id, action, details):
+    &quot;&quot;&quot;Append an action to the agent&#39;s activity log.&quot;&quot;&quot;
+    stream_key = f&quot;agent:log:{run_id}&quot;
+    await client.xadd(stream_key, [
+        (&quot;action&quot;, action),
+        (&quot;details&quot;, json.dumps(details)),
+        (&quot;ts&quot;, str(time.time())),
     ])
 
 
-<span class="keyword">async def</span> <span class="func">get_action_log</span>(client, run_id):
-    <span class="string">"""Read the full activity log for a run."""</span>
-    <span class="keyword">from</span> glide <span class="keyword">import</span> StreamReadOptions
-    stream_key = <span class="string">f"agent:log:</span>{run_id}<span class="string">"</span>
-    result = <span class="keyword">await</span> client.xread({stream_key: <span class="string">"0"</span>}, StreamReadOptions(count=<span class="num">1000</span>))
-    <span class="keyword">if not</span> result:
-        <span class="keyword">return</span> []
+async def get_action_log(client, run_id):
+    &quot;&quot;&quot;Read the full activity log for a run.&quot;&quot;&quot;
+    from glide import StreamReadOptions
+    stream_key = f&quot;agent:log:{run_id}&quot;
+    result = await client.xread({stream_key: &quot;0&quot;}, StreamReadOptions(count=1000))
+    if not result:
+        return []
 
     entries = []
-    <span class="keyword">for</span> key, events <span class="keyword">in</span> result.items():
-        <span class="keyword">for</span> entry_id, fields <span class="keyword">in</span> events.items():
-            entry = {k.decode(): v.decode() <span class="keyword">for</span> k, v <span class="keyword">in</span> fields}
-            entry[<span class="string">"id"</span>] = entry_id.decode()
+    for key, events in result.items():
+        for entry_id, fields in events.items():
+            entry = {k.decode(): v.decode() for k, v in fields}
+            entry[&quot;id&quot;] = entry_id.decode()
             entries.append(entry)
-    <span class="keyword">return</span> entries</code></pre>
-
+    return entries
+</code></pre>
 <h2>Putting It All Together: A Resumable Agent</h2>
-<pre><code><span class="keyword">async def</span> <span class="func">run_agent</span>(client, run_id, query):
-    <span class="comment"># Check for existing checkpoint</span>
-    checkpoint = <span class="keyword">await</span> load_checkpoint(client, run_id)
-    start_step = int(checkpoint[<span class="string">"current_step"</span>]) + <span class="num">1</span> <span class="keyword">if</span> checkpoint <span class="keyword">else</span> <span class="num">1</span>
+<pre><code>async def run_agent(client, run_id, query):
+    # Check for existing checkpoint
+    checkpoint = await load_checkpoint(client, run_id)
+    start_step = int(checkpoint[&quot;current_step&quot;]) + 1 if checkpoint else 1
 
-    <span class="keyword">if</span> start_step > <span class="num">1</span>:
-        print(<span class="string">f"♻️  Resuming from step {start_step}"</span>)
+    if start_step &gt; 1:
+        print(f&quot;♻️  Resuming from step {start_step}&quot;)
 
-    <span class="comment"># Step 1: Search</span>
-    <span class="keyword">if</span> start_step <= <span class="num">1</span>:
-        <span class="keyword">await</span> log_action(client, run_id, <span class="string">"search"</span>, {<span class="string">"query"</span>: query})
-        results = <span class="keyword">await</span> cached_tool_call(
-            client, <span class="string">"web_search"</span>, {<span class="string">"query"</span>: query}, web_search)
-        <span class="keyword">await</span> save_checkpoint(client, run_id, <span class="num">1</span>, {<span class="string">"search_results"</span>: results})
+    # Step 1: Search
+    if start_step &lt;= 1:
+        await log_action(client, run_id, &quot;search&quot;, {&quot;query&quot;: query})
+        results = await cached_tool_call(
+            client, &quot;web_search&quot;, {&quot;query&quot;: query}, web_search)
+        await save_checkpoint(client, run_id, 1, {&quot;search_results&quot;: results})
 
-    <span class="comment"># Step 2: Analyze</span>
-    <span class="keyword">if</span> start_step <= <span class="num">2</span>:
-        <span class="keyword">await</span> log_action(client, run_id, <span class="string">"analyze"</span>, {<span class="string">"input"</span>: <span class="string">"search results"</span>})
-        analysis = call_llm(<span class="string">f"Analyze: {results}"</span>)
-        <span class="keyword">await</span> save_checkpoint(client, run_id, <span class="num">2</span>, {<span class="string">"analysis"</span>: analysis})
+    # Step 2: Analyze
+    if start_step &lt;= 2:
+        await log_action(client, run_id, &quot;analyze&quot;, {&quot;input&quot;: &quot;search results&quot;})
+        analysis = call_llm(f&quot;Analyze: {results}&quot;)
+        await save_checkpoint(client, run_id, 2, {&quot;analysis&quot;: analysis})
 
-    <span class="comment"># Step 3: Respond</span>
-    <span class="keyword">if</span> start_step <= <span class="num">3</span>:
-        <span class="keyword">await</span> log_action(client, run_id, <span class="string">"respond"</span>, {<span class="string">"status"</span>: <span class="string">"generating"</span>})
-        response = call_llm(<span class="string">f"Respond based on: {analysis}"</span>)
-        <span class="keyword">await</span> save_checkpoint(client, run_id, <span class="num">3</span>, {<span class="string">"response"</span>: response})
+    # Step 3: Respond
+    if start_step &lt;= 3:
+        await log_action(client, run_id, &quot;respond&quot;, {&quot;status&quot;: &quot;generating&quot;})
+        response = call_llm(f&quot;Respond based on: {analysis}&quot;)
+        await save_checkpoint(client, run_id, 3, {&quot;response&quot;: response})
 
-    <span class="keyword">await</span> mark_complete(client, run_id)
-    <span class="keyword">await</span> log_action(client, run_id, <span class="string">"complete"</span>, {<span class="string">"status"</span>: <span class="string">"done"</span>})
-    <span class="keyword">return</span> response</code></pre>
-
+    await mark_complete(client, run_id)
+    await log_action(client, run_id, &quot;complete&quot;, {&quot;status&quot;: &quot;done&quot;})
+    return response
+</code></pre>
 <h2>Debugging: Inspect the Activity Log</h2>
-<pre><code>log = <span class="keyword">await</span> get_action_log(client, <span class="string">"run_001"</span>)
-<span class="keyword">for</span> entry <span class="keyword">in</span> log:
-    print(<span class="string">f"  [{entry['id']}] {entry['action']}: {entry['details']}"</span>)
+<pre><code>log = await get_action_log(client, &quot;run_001&quot;)
+for entry in log:
+    print(f&quot;  [{entry[&#39;id&#39;]}] {entry[&#39;action&#39;]}: {entry[&#39;details&#39;]}&quot;)
 
-<span class="comment"># Output:</span>
-<span class="comment"># [1710000000001-0] search: {"query": "Valkey benchmarks"}</span>
-<span class="comment"># [1710000000002-0] analyze: {"input": "search results"}</span>
-<span class="comment"># [1710000000003-0] respond: {"status": "generating"}</span>
-<span class="comment"># [1710000000004-0] complete: {"status": "done"}</span></code></pre>
-
+# Output:
+# [1710000000001-0] search: {&quot;query&quot;: &quot;Valkey benchmarks&quot;}
+# [1710000000002-0] analyze: {&quot;input&quot;: &quot;search results&quot;}
+# [1710000000003-0] respond: {&quot;status&quot;: &quot;generating&quot;}
+# [1710000000004-0] complete: {&quot;status&quot;: &quot;done&quot;}
+</code></pre>
 <h2>Valkey Commands Reference</h2>
 <table>
-<tr><th>Pattern</th><th>Command</th><th>Latency</th></tr>
-<tr><td>Save checkpoint</td><td><code>HSET agent:state:{id} step 2 result '{...}'</code></td><td>~0.1ms</td></tr>
-<tr><td>Load checkpoint</td><td><code>HGETALL agent:state:{id}</code></td><td>~0.1ms</td></tr>
-<tr><td>Cache tool result</td><td><code>SET tool:cache:{hash} '{...}' EX 300</code></td><td>~0.1ms</td></tr>
-<tr><td>Check tool cache</td><td><code>GET tool:cache:{hash}</code></td><td>~0.1ms</td></tr>
-<tr><td>Log action</td><td><code>XADD agent:log:{id} * action "search" ...</code></td><td>~0.1ms</td></tr>
-<tr><td>Read full log</td><td><code>XREAD STREAMS agent:log:{id} 0</code></td><td>~0.1ms</td></tr>
-</table>
-
+<thead>
+<tr>
+<th>Pattern</th>
+<th>Command</th>
+<th>Latency</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Save checkpoint</td>
+<td><code>HSET agent:state:{id} step 2 result &#39;{...}&#39;</code></td>
+<td>~0.1ms</td>
+</tr>
+<tr>
+<td>Load checkpoint</td>
+<td><code>HGETALL agent:state:{id}</code></td>
+<td>~0.1ms</td>
+</tr>
+<tr>
+<td>Cache tool result</td>
+<td><code>SET tool:cache:{hash} &#39;{...}&#39; EX 300</code></td>
+<td>~0.1ms</td>
+</tr>
+<tr>
+<td>Check tool cache</td>
+<td><code>GET tool:cache:{hash}</code></td>
+<td>~0.1ms</td>
+</tr>
+<tr>
+<td>Log action</td>
+<td><code>XADD agent:log:{id} * action &quot;search&quot; ...</code></td>
+<td>~0.1ms</td>
+</tr>
+<tr>
+<td>Read full log</td>
+<td><code>XREAD STREAMS agent:log:{id} 0</code></td>
+<td>~0.1ms</td>
+</tr>
+</tbody></table>
 <h2>Summary: Five Valkey Data Structures, One Conversation System</h2>
-<p>Across these 5 cookbooks, we've used every major Valkey data structure for a different aspect of conversation memory:</p>
+<p>Across these 5 cookbooks, we&#39;ve used every major Valkey data structure for a different aspect of conversation memory:</p>
 <table>
-<tr><th>Cookbook</th><th>Data Structure</th><th>Purpose</th></tr>
-<tr><td>01 Getting Started</td><td><code>LIST</code></td><td>Ordered chat history</td></tr>
-<tr><td>02 Session Management</td><td><code>HASH</code></td><td>Session metadata</td></tr>
-<tr><td>03 Semantic Memory</td><td><code>JSON</code> + <code>FT.SEARCH</code></td><td>Vector search over conversations</td></tr>
-<tr><td>04 Semantic Caching</td><td><code>JSON</code> + <code>FT.SEARCH</code></td><td>Cache LLM responses by meaning</td></tr>
-<tr><td>05 Agent State</td><td><code>HASH</code> + <code>STRING</code> + <code>STREAM</code></td><td>Checkpoints, tool cache, event log</td></tr>
-</table>
+<thead>
+<tr>
+<th>Cookbook</th>
+<th>Data Structure</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>01 Getting Started</td>
+<td><code>LIST</code></td>
+<td>Ordered chat history</td>
+</tr>
+<tr>
+<td>02 Session Management</td>
+<td><code>HASH</code></td>
+<td>Session metadata</td>
+</tr>
+<tr>
+<td>03 Semantic Memory</td>
+<td><code>JSON</code> + <code>FT.SEARCH</code></td>
+<td>Vector search over conversations</td>
+</tr>
+<tr>
+<td>04 Semantic Caching</td>
+<td><code>JSON</code> + <code>FT.SEARCH</code></td>
+<td>Cache LLM responses by meaning</td>
+</tr>
+<tr>
+<td>05 Agent State</td>
+<td><code>HASH</code> + <code>STRING</code> + <code>STREAM</code></td>
+<td>Checkpoints, tool cache, event log</td>
+</tr>
+</tbody></table>
 <p><strong>One Valkey instance. Six data structures. Complete AI memory infrastructure.</strong></p>
 
+
 <div class="nav-prev-next">
-<a href="04-semantic-caching.html">
-<span class="label">← Previous</span>
-<span class="title">04 — Semantic Caching</span>
-</a>
+<a href="04-semantic-caching.html" class="prev"><span class="label">← Previous</span><span class="title">04 — Semantic Caching</span></a>
 <div></div>
 </div>
 </article>
+<button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg></button>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<script>function toggleTheme(){var b=document.body,l=b.classList.toggle("light");localStorage.setItem("theme",l?"light":"dark")}(function(){if(localStorage.getItem("theme")==="light")document.body.classList.add("light")})()</script>
 </body>
 </html>

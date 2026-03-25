@@ -1,0 +1,69 @@
+{
+  "trackName": "CrewAI",
+  "cookbooks": [
+    {
+      "num": "01",
+      "source": "01-getting-started.md",
+      "output": "01-getting-started.html",
+      "title": "Getting Started with CrewAI + Valkey",
+      "h1": "Getting Started with CrewAI + Valkey",
+      "breadcrumb": "Getting Started",
+      "difficulty": "Beginner",
+      "time": "15 min",
+      "next": {
+        "file": "02-memory-storage.html",
+        "title": "02 \u2014 Memory Storage"
+      }
+    },
+    {
+      "num": "02",
+      "source": "02-memory-storage.md",
+      "output": "02-memory-storage.html",
+      "title": "Memory Storage",
+      "h1": "Memory Storage",
+      "breadcrumb": "Memory Storage",
+      "difficulty": "Intermediate",
+      "time": "20 min",
+      "prev": {
+        "file": "01-getting-started.html",
+        "title": "01 \u2014 Getting Started"
+      },
+      "next": {
+        "file": "03-agent-memory.html",
+        "title": "03 \u2014 Agent Memory"
+      }
+    },
+    {
+      "num": "03",
+      "source": "03-agent-memory.md",
+      "output": "03-agent-memory.html",
+      "title": "Agent Memory",
+      "h1": "Agent Memory",
+      "breadcrumb": "Agent Memory",
+      "difficulty": "Intermediate",
+      "time": "20 min",
+      "prev": {
+        "file": "02-memory-storage.html",
+        "title": "02 \u2014 Memory Storage"
+      },
+      "next": {
+        "file": "04-deploy-elasticache.html",
+        "title": "04 \u2014 Deploy"
+      }
+    },
+    {
+      "num": "04",
+      "source": "04-deploy-elasticache.md",
+      "output": "04-deploy-elasticache.html",
+      "title": "Deploy with ElastiCache",
+      "h1": "Deploy with ElastiCache",
+      "breadcrumb": "Deploy",
+      "difficulty": "Advanced",
+      "time": "20 min",
+      "prev": {
+        "file": "03-agent-memory.html",
+        "title": "03 \u2014 Agent Memory"
+      }
+    }
+  ]
+}

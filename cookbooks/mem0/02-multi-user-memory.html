@@ -6,114 +6,150 @@
 <title>02 — Multi-User Memory — Valkey for AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../cookbook.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<style>
+body.light .nav{background:rgba(255,255,255,.9)!important}
+body.light pre{background:rgba(0,0,0,.03)!important;border-color:rgba(0,0,0,.08)!important}
+body.light code{color:#1d1d1f}
+body.light .callout{background:rgba(0,0,0,.02);border-color:rgba(0,0,0,.08)}
+body.light table{border-color:rgba(0,0,0,.08)}
+body.light th{background:rgba(0,0,0,.04)}
+body.light td{border-color:rgba(0,0,0,.06)}
+body.light{--bg:#fff;--bg-elevated:#f5f5f7;--bg-card:rgba(0,0,0,.03);--bg-card-hover:rgba(0,0,0,.06);--brd:rgba(0,0,0,.08);--t1:#1d1d1f;--t2:rgba(29,29,31,.6);--t3:rgba(29,29,31,.4)}
+.theme-toggle{background:rgba(128,128,128,.12);border:1px solid rgba(128,128,128,.2);border-radius:100px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:fixed;top:18px;right:24px;z-index:1001}
+pre{position:relative}
+pre code.hljs{background:transparent!important;padding:0}
+</style>
 </head>
 <body>
-<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/#frameworks">Frameworks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
 <article>
 <div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/mem0/">Mem0</a> → 02 Multi-User Memory</div>
 <div class="meta"><span class="diff-medium">Intermediate</span><span class="lang">Python</span><span class="lang">~20 min</span></div>
-<h1>Multi-User <span class="gradient">Memory</span></h1>
-<p class="lead">Isolate memories per user, agent, and session. Build a personalized AI assistant where each user has their own memory space — all backed by Valkey.</p>
+<h1>Multi-User Memory</h1>
+
 
 <h2>Memory Isolation</h2>
 <p>Mem0 supports three levels of memory isolation via TAG fields in Valkey:</p>
 <table>
-<tr><th>Level</th><th>Parameter</th><th>Use Case</th></tr>
-<tr><td>User</td><td><code>user_id</code></td><td>Per-user preferences across all sessions</td></tr>
-<tr><td>Agent</td><td><code>agent_id</code></td><td>Per-agent knowledge (e.g., support bot vs sales bot)</td></tr>
-<tr><td>Session</td><td><code>run_id</code></td><td>Per-conversation context (ephemeral)</td></tr>
-</table>
-
+<thead>
+<tr>
+<th>Level</th>
+<th>Parameter</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>User</td>
+<td><code>user_id</code></td>
+<td>Per-user preferences across all sessions</td>
+</tr>
+<tr>
+<td>Agent</td>
+<td><code>agent_id</code></td>
+<td>Per-agent knowledge (e.g., support bot vs sales bot)</td>
+</tr>
+<tr>
+<td>Session</td>
+<td><code>run_id</code></td>
+<td>Per-conversation context (ephemeral)</td>
+</tr>
+</tbody></table>
 <h2>Step 1: Setup</h2>
-<pre><code><span class="keyword">from</span> mem0 <span class="keyword">import</span> Memory
+<pre><code>from mem0 import Memory
 
 config = {
-    <span class="string">"vector_store"</span>: {
-        <span class="string">"provider"</span>: <span class="string">"valkey"</span>,
-        <span class="string">"config"</span>: {
-            <span class="string">"valkey_url"</span>: <span class="string">"valkey://localhost:6379"</span>,
-            <span class="string">"collection_name"</span>: <span class="string">"multi_user_app"</span>,
-            <span class="string">"embedding_model_dims"</span>: <span class="num">1536</span>,
+    &quot;vector_store&quot;: {
+        &quot;provider&quot;: &quot;valkey&quot;,
+        &quot;config&quot;: {
+            &quot;valkey_url&quot;: &quot;valkey://localhost:6379&quot;,
+            &quot;collection_name&quot;: &quot;multi_user_app&quot;,
+            &quot;embedding_model_dims&quot;: 1536,
         }
     }
 }
-memory = Memory.from_config(config)</code></pre>
-
+memory = Memory.from_config(config)
+</code></pre>
 <h2>Step 2: Per-User Memories</h2>
-<pre><code><span class="comment"># User Alice</span>
+<pre><code># User Alice
 memory.add(
-    [{<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"I prefer dark mode and Python."</span>}],
-    user_id=<span class="string">"alice"</span>,
+    [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;I prefer dark mode and Python.&quot;}],
+    user_id=&quot;alice&quot;,
 )
 
-<span class="comment"># User Bob</span>
+# User Bob
 memory.add(
-    [{<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"I use TypeScript and like light mode."</span>}],
-    user_id=<span class="string">"bob"</span>,
+    [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;I use TypeScript and like light mode.&quot;}],
+    user_id=&quot;bob&quot;,
 )
 
-<span class="comment"># Search for Alice — only gets Alice's memories</span>
-alice_results = memory.search(<span class="string">"What are the user preferences?"</span>, user_id=<span class="string">"alice"</span>)
-<span class="func">print</span>(<span class="string">"Alice:"</span>, [r[<span class="string">"memory"</span>] <span class="keyword">for</span> r <span class="keyword">in</span> alice_results[<span class="string">"results"</span>]])
-<span class="comment"># Alice: ['Prefers dark mode and Python']</span>
+# Search for Alice — only gets Alice&#39;s memories
+alice_results = memory.search(&quot;What are the user preferences?&quot;, user_id=&quot;alice&quot;)
+print(&quot;Alice:&quot;, [r[&quot;memory&quot;] for r in alice_results[&quot;results&quot;]])
+# Alice: [&#39;Prefers dark mode and Python&#39;]
 
-<span class="comment"># Search for Bob — only gets Bob's memories</span>
-bob_results = memory.search(<span class="string">"What are the user preferences?"</span>, user_id=<span class="string">"bob"</span>)
-<span class="func">print</span>(<span class="string">"Bob:"</span>, [r[<span class="string">"memory"</span>] <span class="keyword">for</span> r <span class="keyword">in</span> bob_results[<span class="string">"results"</span>]])
-<span class="comment"># Bob: ['Uses TypeScript and likes light mode']</span></code></pre>
-
-<div class="callout">
-<p><strong>How isolation works:</strong> In Valkey, each memory is stored as a Hash with a <code>user_id</code> TAG field. When you search with <code>user_id="alice"</code>, Mem0 adds a TAG filter <code>@user_id:{alice}</code> to the <code>FT.SEARCH</code> query — ensuring Bob's memories are never returned.</p>
-</div>
-
+# Search for Bob — only gets Bob&#39;s memories
+bob_results = memory.search(&quot;What are the user preferences?&quot;, user_id=&quot;bob&quot;)
+print(&quot;Bob:&quot;, [r[&quot;memory&quot;] for r in bob_results[&quot;results&quot;]])
+# Bob: [&#39;Uses TypeScript and likes light mode&#39;]
+</code></pre>
+<p><strong>How isolation works:</strong> In Valkey, each memory is stored as a Hash with a <code>user_id</code> TAG field. When you search with <code>user_id=&quot;alice&quot;</code>, Mem0 adds a TAG filter <code>@user_id:{alice}</code> to the <code>FT.SEARCH</code> query — ensuring Bob&#39;s memories are never returned.</p>
 <h2>Step 3: Per-Agent Memories</h2>
-<pre><code><span class="comment"># Support agent knowledge</span>
+<pre><code># Support agent knowledge
 memory.add(
-    [{<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"Our refund policy is 30 days for unused items."</span>}],
-    agent_id=<span class="string">"support_bot"</span>,
+    [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Our refund policy is 30 days for unused items.&quot;}],
+    agent_id=&quot;support_bot&quot;,
 )
 
-<span class="comment"># Sales agent knowledge</span>
+# Sales agent knowledge
 memory.add(
-    [{<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"Current promotion: 20% off all premium plans."</span>}],
-    agent_id=<span class="string">"sales_bot"</span>,
+    [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Current promotion: 20% off all premium plans.&quot;}],
+    agent_id=&quot;sales_bot&quot;,
 )
 
-<span class="comment"># Each agent only sees its own knowledge</span>
-support_results = memory.search(<span class="string">"What is the refund policy?"</span>, agent_id=<span class="string">"support_bot"</span>)
-sales_results = memory.search(<span class="string">"Any promotions?"</span>, agent_id=<span class="string">"sales_bot"</span>)</code></pre>
-
+# Each agent only sees its own knowledge
+support_results = memory.search(&quot;What is the refund policy?&quot;, agent_id=&quot;support_bot&quot;)
+sales_results = memory.search(&quot;Any promotions?&quot;, agent_id=&quot;sales_bot&quot;)
+</code></pre>
 <h2>Step 4: Combined User + Agent</h2>
-<pre><code><span class="comment"># Add a memory scoped to both user AND agent</span>
+<pre><code># Add a memory scoped to both user AND agent
 memory.add(
-    [{<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"I had an issue with order #12345."</span>}],
-    user_id=<span class="string">"alice"</span>,
-    agent_id=<span class="string">"support_bot"</span>,
+    [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;I had an issue with order #12345.&quot;}],
+    user_id=&quot;alice&quot;,
+    agent_id=&quot;support_bot&quot;,
 )
 
-<span class="comment"># Search: finds Alice's support interactions only</span>
+# Search: finds Alice&#39;s support interactions only
 results = memory.search(
-    <span class="string">"Previous issues"</span>,
-    user_id=<span class="string">"alice"</span>,
-    agent_id=<span class="string">"support_bot"</span>,
-)</code></pre>
-
+    &quot;Previous issues&quot;,
+    user_id=&quot;alice&quot;,
+    agent_id=&quot;support_bot&quot;,
+)
+</code></pre>
 <h2>Valkey Data Model</h2>
-<pre><code><span class="comment"># Each memory is stored as a Valkey Hash at:</span>
-<span class="comment">#   mem0:multi_user_app:{memory_id}</span>
-<span class="comment">#</span>
-<span class="comment"># Fields:</span>
-<span class="comment">#   memory_id: TAG</span>
-<span class="comment">#   user_id: TAG      ← enables per-user filtering</span>
-<span class="comment">#   agent_id: TAG     ← enables per-agent filtering</span>
-<span class="comment">#   run_id: TAG       ← enables per-session filtering</span>
-<span class="comment">#   memory: TAG       ← the extracted memory text</span>
-<span class="comment">#   embedding: VECTOR ← HNSW FLOAT32 COSINE</span>
-<span class="comment">#   created_at: NUMERIC</span>
-<span class="comment">#   updated_at: NUMERIC</span></code></pre>
+<pre><code># Each memory is stored as a Valkey Hash at:
+#   mem0:multi_user_app:{memory_id}
+#
+# Fields:
+#   memory_id: TAG
+#   user_id: TAG      ← enables per-user filtering
+#   agent_id: TAG     ← enables per-agent filtering
+#   run_id: TAG       ← enables per-session filtering
+#   memory: TAG       ← the extracted memory text
+#   embedding: VECTOR ← HNSW FLOAT32 COSINE
+#   created_at: NUMERIC
+#   updated_at: NUMERIC
+</code></pre>
+
 
 <div class="nav-prev-next">
 <a href="01-getting-started.html" class="prev"><span class="label">← Previous</span><span class="title">01 — Getting Started</span></a>
-<a href="03-production.html" class="next"><span class="label">Next →</span><span class="title">03 — Production with ElastiCache</span></a>
+<a href="03-production.html" class="next"><span class="label">Next →</span><span class="title">03 — Production</span></a>
 </div>
-</article></body></html>
+</article>
+<button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg></button>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<script>function toggleTheme(){var b=document.body,l=b.classList.toggle("light");localStorage.setItem("theme",l?"light":"dark")}(function(){if(localStorage.getItem("theme")==="light")document.body.classList.add("light")})()</script>
+</body>
+</html>

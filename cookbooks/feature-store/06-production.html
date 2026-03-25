@@ -6,304 +6,346 @@
 <title>06 — Production Patterns — Valkey for AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../cookbook.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<style>
+body.light .nav{background:rgba(255,255,255,.9)!important}
+body.light pre{background:rgba(0,0,0,.03)!important;border-color:rgba(0,0,0,.08)!important}
+body.light code{color:#1d1d1f}
+body.light .callout{background:rgba(0,0,0,.02);border-color:rgba(0,0,0,.08)}
+body.light table{border-color:rgba(0,0,0,.08)}
+body.light th{background:rgba(0,0,0,.04)}
+body.light td{border-color:rgba(0,0,0,.06)}
+body.light{--bg:#fff;--bg-elevated:#f5f5f7;--bg-card:rgba(0,0,0,.03);--bg-card-hover:rgba(0,0,0,.06);--brd:rgba(0,0,0,.08);--t1:#1d1d1f;--t2:rgba(29,29,31,.6);--t3:rgba(29,29,31,.4)}
+.theme-toggle{background:rgba(128,128,128,.12);border:1px solid rgba(128,128,128,.2);border-radius:100px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:fixed;top:18px;right:24px;z-index:1001}
+pre{position:relative}
+pre code.hljs{background:transparent!important;padding:0}
+</style>
 </head>
 <body>
-<nav class="nav"><div class="nav-inner">
-<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
-<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/feature-store/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div>
-</div></nav>
-
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/#frameworks">Frameworks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
 <article>
-<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/feature-store/">Feature Store</a> → 06 Production Patterns</div>
-<div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~30 min</span></div>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/feature-store/">Feature Store</a> → 06 Production</div>
+<div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~25 min</span></div>
+<h1>Production Patterns</h1>
 
-<h1>Production <span class="gradient">Patterns</span></h1>
-<p class="lead">Feature freshness monitoring, stale feature detection, versioning, health checks, connection pooling, and observability — everything you need to run a Valkey feature store in production.</p>
 
 <h2>Pattern 1: Feature Freshness Monitoring</h2>
 <p>Every feature Hash includes an <code>_updated_at</code> timestamp. Use it to detect stale features before they poison your model:</p>
+<pre><code>import redis
+import time
 
-<pre><code><span class="keyword">import</span> redis
-<span class="keyword">import</span> time
+client = redis.Redis(host=&quot;localhost&quot;, port=6379, decode_responses=True)
 
-client = redis.Redis(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>, decode_responses=<span class="keyword">True</span>)
+def check_freshness(feature_view: str, entity_id: str, threshold_seconds: float = 300):
+    &quot;&quot;&quot;Check if features are fresh enough for inference.&quot;&quot;&quot;
+    key = f&quot;fs:v1:{feature_view}:{entity_id}&quot;
+    updated_at = client.hget(key, &quot;_updated_at&quot;)
 
-<span class="keyword">def</span> <span class="func">check_freshness</span>(feature_view: str, entity_id: str, threshold_seconds: float = <span class="num">300</span>):
-    <span class="string">"""Check if features are fresh enough for inference."""</span>
-    key = <span class="string">f"fs:v1:{feature_view}:{entity_id}"</span>
-    updated_at = client.hget(key, <span class="string">"_updated_at"</span>)
+    if updated_at is None:
+        return {&quot;status&quot;: &quot;missing&quot;, &quot;age_seconds&quot;: None}
 
-    <span class="keyword">if</span> updated_at <span class="keyword">is</span> <span class="keyword">None</span>:
-        <span class="keyword">return</span> {<span class="string">"status"</span>: <span class="string">"missing"</span>, <span class="string">"age_seconds"</span>: <span class="keyword">None</span>}
+    age = time.time() - float(updated_at)
 
-    age = time.time() - <span class="func">float</span>(updated_at)
-
-    <span class="keyword">return</span> {
-        <span class="string">"status"</span>: <span class="string">"fresh"</span> <span class="keyword">if</span> age < threshold_seconds <span class="keyword">else</span> <span class="string">"stale"</span>,
-        <span class="string">"age_seconds"</span>: <span class="func">round</span>(age, <span class="num">1</span>),
-        <span class="string">"threshold"</span>: threshold_seconds,
+    return {
+        &quot;status&quot;: &quot;fresh&quot; if age &lt; threshold_seconds else &quot;stale&quot;,
+        &quot;age_seconds&quot;: round(age, 1),
+        &quot;threshold&quot;: threshold_seconds,
     }
 
-<span class="comment"># Check a single entity</span>
-result = check_freshness(<span class="string">"user_risk_profile"</span>, <span class="string">"user_001"</span>, threshold_seconds=<span class="num">60</span>)
-<span class="func">print</span>(result)
-<span class="comment"># {'status': 'fresh', 'age_seconds': 12.3, 'threshold': 60}</span></code></pre>
-
+# Check a single entity
+result = check_freshness(&quot;user_risk_profile&quot;, &quot;user_001&quot;, threshold_seconds=60)
+print(result)
+# {&#39;status&#39;: &#39;fresh&#39;, &#39;age_seconds&#39;: 12.3, &#39;threshold&#39;: 60}
+</code></pre>
 <h3>Batch Freshness Check</h3>
-<pre><code><span class="keyword">def</span> <span class="func">batch_freshness_check</span>(feature_view: str, entity_ids: list, threshold: float = <span class="num">300</span>):
-    <span class="string">"""Check freshness for multiple entities in one pipeline."""</span>
-    pipe = client.pipeline(transaction=<span class="keyword">False</span>)
-    <span class="keyword">for</span> eid <span class="keyword">in</span> entity_ids:
-        pipe.hget(<span class="string">f"fs:v1:{feature_view}:{eid}"</span>, <span class="string">"_updated_at"</span>)
+<pre><code>def batch_freshness_check(feature_view: str, entity_ids: list, threshold: float = 300):
+    &quot;&quot;&quot;Check freshness for multiple entities in one pipeline.&quot;&quot;&quot;
+    pipe = client.pipeline(transaction=False)
+    for eid in entity_ids:
+        pipe.hget(f&quot;fs:v1:{feature_view}:{eid}&quot;, &quot;_updated_at&quot;)
 
     results = pipe.execute()
     now = time.time()
-    report = {<span class="string">"fresh"</span>: <span class="num">0</span>, <span class="string">"stale"</span>: <span class="num">0</span>, <span class="string">"missing"</span>: <span class="num">0</span>, <span class="string">"stale_entities"</span>: []}
+    report = {&quot;fresh&quot;: 0, &quot;stale&quot;: 0, &quot;missing&quot;: 0, &quot;stale_entities&quot;: []}
 
-    <span class="keyword">for</span> eid, updated_at <span class="keyword">in</span> <span class="func">zip</span>(entity_ids, results):
-        <span class="keyword">if</span> updated_at <span class="keyword">is</span> <span class="keyword">None</span>:
-            report[<span class="string">"missing"</span>] += <span class="num">1</span>
-        <span class="keyword">elif</span> now - <span class="func">float</span>(updated_at) > threshold:
-            report[<span class="string">"stale"</span>] += <span class="num">1</span>
-            report[<span class="string">"stale_entities"</span>].append(eid)
-        <span class="keyword">else</span>:
-            report[<span class="string">"fresh"</span>] += <span class="num">1</span>
+    for eid, updated_at in zip(entity_ids, results):
+        if updated_at is None:
+            report[&quot;missing&quot;] += 1
+        elif now - float(updated_at) &gt; threshold:
+            report[&quot;stale&quot;] += 1
+            report[&quot;stale_entities&quot;].append(eid)
+        else:
+            report[&quot;fresh&quot;] += 1
 
-    <span class="keyword">return</span> report
+    return report
 
-<span class="comment"># Check 100 entities</span>
-ids = [<span class="string">f"user_{i:03d}"</span> <span class="keyword">for</span> i <span class="keyword">in</span> <span class="func">range</span>(<span class="num">100</span>)]
-report = batch_freshness_check(<span class="string">"user_risk_profile"</span>, ids, threshold=<span class="num">60</span>)
-<span class="func">print</span>(report)
-<span class="comment"># {'fresh': 85, 'stale': 10, 'missing': 5, 'stale_entities': [...]}</span></code></pre>
-
+# Check 100 entities
+ids = [f&quot;user_{i:03d}&quot; for i in range(100)]
+report = batch_freshness_check(&quot;user_risk_profile&quot;, ids, threshold=60)
+print(report)
+# {&#39;fresh&#39;: 85, &#39;stale&#39;: 10, &#39;missing&#39;: 5, &#39;stale_entities&#39;: [...]}
+</code></pre>
 <h3>With the Library</h3>
-<pre><code><span class="keyword">from</span> src <span class="keyword">import</span> ValkeyFeatureStore, Entity, FeatureView, Feature, FeatureType
+<pre><code>from src import ValkeyFeatureStore, Entity, FeatureView, Feature, FeatureType
 
-store = ValkeyFeatureStore(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>)
-<span class="comment"># ... register feature views ...</span>
+store = ValkeyFeatureStore(host=&quot;localhost&quot;, port=6379)
+# ... register feature views ...
 
-<span class="comment"># The monitor module provides freshness checking</span>
-fv = store.get_feature_view(<span class="string">"user_risk_profile"</span>)
+# The monitor module provides freshness checking
+fv = store.get_feature_view(&quot;user_risk_profile&quot;)
 report = store.monitor.check_freshness(
     fv,
-    entity_ids=[<span class="string">"user_001"</span>, <span class="string">"user_002"</span>],
-    threshold_seconds=<span class="num">300</span>,
+    entity_ids=[&quot;user_001&quot;, &quot;user_002&quot;],
+    threshold_seconds=300,
 )
-<span class="func">print</span>(report)</code></pre>
-
+print(report)
+</code></pre>
 <h2>Pattern 2: Health Checks</h2>
 <p>Add health checks to your deployment to detect issues early:</p>
+<pre><code>def health_check() -&gt; dict:
+    &quot;&quot;&quot;Full health check for the feature store.&quot;&quot;&quot;
+    health = {&quot;status&quot;: &quot;healthy&quot;, &quot;checks&quot;: {}}
 
-<pre><code><span class="keyword">def</span> <span class="func">health_check</span>() -> dict:
-    <span class="string">"""Full health check for the feature store."""</span>
-    health = {<span class="string">"status"</span>: <span class="string">"healthy"</span>, <span class="string">"checks"</span>: {}}
-
-    <span class="comment"># 1. Valkey connectivity</span>
-    <span class="keyword">try</span>:
+    # 1. Valkey connectivity
+    try:
         start = time.time()
         client.ping()
-        latency = (time.time() - start) * <span class="num">1000</span>
-        health[<span class="string">"checks"</span>][<span class="string">"valkey_ping"</span>] = {
-            <span class="string">"status"</span>: <span class="string">"ok"</span>,
-            <span class="string">"latency_ms"</span>: <span class="func">round</span>(latency, <span class="num">2</span>),
+        latency = (time.time() - start) * 1000
+        health[&quot;checks&quot;][&quot;valkey_ping&quot;] = {
+            &quot;status&quot;: &quot;ok&quot;,
+            &quot;latency_ms&quot;: round(latency, 2),
         }
-    <span class="keyword">except</span> <span class="func">Exception</span> <span class="keyword">as</span> e:
-        health[<span class="string">"status"</span>] = <span class="string">"unhealthy"</span>
-        health[<span class="string">"checks"</span>][<span class="string">"valkey_ping"</span>] = {<span class="string">"status"</span>: <span class="string">"failed"</span>, <span class="string">"error"</span>: <span class="func">str</span>(e)}
+    except Exception as e:
+        health[&quot;status&quot;] = &quot;unhealthy&quot;
+        health[&quot;checks&quot;][&quot;valkey_ping&quot;] = {&quot;status&quot;: &quot;failed&quot;, &quot;error&quot;: str(e)}
 
-    <span class="comment"># 2. Write/read test</span>
-    <span class="keyword">try</span>:
-        test_key = <span class="string">"fs:health_check"</span>
-        client.set(test_key, <span class="string">"ok"</span>, ex=<span class="num">10</span>)
+    # 2. Write/read test
+    try:
+        test_key = &quot;fs:health_check&quot;
+        client.set(test_key, &quot;ok&quot;, ex=10)
         val = client.get(test_key)
-        health[<span class="string">"checks"</span>][<span class="string">"write_read"</span>] = {<span class="string">"status"</span>: <span class="string">"ok"</span> <span class="keyword">if</span> val == <span class="string">"ok"</span> <span class="keyword">else</span> <span class="string">"failed"</span>}
-    <span class="keyword">except</span> <span class="func">Exception</span> <span class="keyword">as</span> e:
-        health[<span class="string">"status"</span>] = <span class="string">"unhealthy"</span>
-        health[<span class="string">"checks"</span>][<span class="string">"write_read"</span>] = {<span class="string">"status"</span>: <span class="string">"failed"</span>, <span class="string">"error"</span>: <span class="func">str</span>(e)}
+        health[&quot;checks&quot;][&quot;write_read&quot;] = {&quot;status&quot;: &quot;ok&quot; if val == &quot;ok&quot; else &quot;failed&quot;}
+    except Exception as e:
+        health[&quot;status&quot;] = &quot;unhealthy&quot;
+        health[&quot;checks&quot;][&quot;write_read&quot;] = {&quot;status&quot;: &quot;failed&quot;, &quot;error&quot;: str(e)}
 
-    <span class="comment"># 3. Memory usage</span>
-    <span class="keyword">try</span>:
-        info = client.info(<span class="string">"memory"</span>)
-        used_mb = info[<span class="string">"used_memory"</span>] / (<span class="num">1024</span> * <span class="num">1024</span>)
-        max_mb = info.get(<span class="string">"maxmemory"</span>, <span class="num">0</span>) / (<span class="num">1024</span> * <span class="num">1024</span>)
-        health[<span class="string">"checks"</span>][<span class="string">"memory"</span>] = {
-            <span class="string">"used_mb"</span>: <span class="func">round</span>(used_mb, <span class="num">1</span>),
-            <span class="string">"max_mb"</span>: <span class="func">round</span>(max_mb, <span class="num">1</span>) <span class="keyword">if</span> max_mb > <span class="num">0</span> <span class="keyword">else</span> <span class="string">"unlimited"</span>,
-            <span class="string">"status"</span>: <span class="string">"ok"</span>,
+    # 3. Memory usage
+    try:
+        info = client.info(&quot;memory&quot;)
+        used_mb = info[&quot;used_memory&quot;] / (1024 * 1024)
+        max_mb = info.get(&quot;maxmemory&quot;, 0) / (1024 * 1024)
+        health[&quot;checks&quot;][&quot;memory&quot;] = {
+            &quot;used_mb&quot;: round(used_mb, 1),
+            &quot;max_mb&quot;: round(max_mb, 1) if max_mb &gt; 0 else &quot;unlimited&quot;,
+            &quot;status&quot;: &quot;ok&quot;,
         }
-    <span class="keyword">except</span> <span class="func">Exception</span> <span class="keyword">as</span> e:
-        health[<span class="string">"checks"</span>][<span class="string">"memory"</span>] = {<span class="string">"status"</span>: <span class="string">"failed"</span>}
+    except Exception as e:
+        health[&quot;checks&quot;][&quot;memory&quot;] = {&quot;status&quot;: &quot;failed&quot;}
 
-    <span class="keyword">return</span> health
+    return health
 
-<span class="func">print</span>(health_check())
-<span class="comment"># {'status': 'healthy', 'checks': {'valkey_ping': {'status': 'ok', 'latency_ms': 0.12}, ...}}</span></code></pre>
-
+print(health_check())
+# {&#39;status&#39;: &#39;healthy&#39;, &#39;checks&#39;: {&#39;valkey_ping&#39;: {&#39;status&#39;: &#39;ok&#39;, &#39;latency_ms&#39;: 0.12}, ...}}
+</code></pre>
 <h3>With the Library</h3>
-<pre><code><span class="comment"># Built-in health check</span>
+<pre><code># Built-in health check
 health = store.health()
-<span class="func">print</span>(health)
+print(health)
 
-<span class="comment"># Full info including registered views</span>
+# Full info including registered views
 info = store.info()
-<span class="func">print</span>(info)
-<span class="comment"># {'registered_views': ['user_profile', 'user_risk_profile'], 'health': {...}}</span></code></pre>
-
+print(info)
+# {&#39;registered_views&#39;: [&#39;user_profile&#39;, &#39;user_risk_profile&#39;], &#39;health&#39;: {...}}
+</code></pre>
 <h2>Pattern 3: Feature Versioning</h2>
 <p>When your feature schema changes, use versioned key prefixes to migrate safely:</p>
+<pre><code># Current: fs:v1:user_profile:user_001
+# New:     fs:v2:user_profile:user_001
 
-<pre><code><span class="comment"># Current: fs:v1:user_profile:user_001</span>
-<span class="comment"># New:     fs:v2:user_profile:user_001</span>
-
-<span class="comment"># Step 1: Create v2 feature view with new schema</span>
+# Step 1: Create v2 feature view with new schema
 user_features_v2 = FeatureView(
-    name=<span class="string">"user_profile"</span>,
+    name=&quot;user_profile&quot;,
     entity=user,
     features=[
-        Feature(<span class="string">"age"</span>, FeatureType.INT),
-        Feature(<span class="string">"lifetime_value"</span>, FeatureType.FLOAT),
-        Feature(<span class="string">"segment"</span>, FeatureType.STRING),
-        Feature(<span class="string">"churn_risk"</span>, FeatureType.FLOAT),  <span class="comment"># ← New feature</span>
+        Feature(&quot;age&quot;, FeatureType.INT),
+        Feature(&quot;lifetime_value&quot;, FeatureType.FLOAT),
+        Feature(&quot;segment&quot;, FeatureType.STRING),
+        Feature(&quot;churn_risk&quot;, FeatureType.FLOAT),  # ← New feature
     ],
-    version=<span class="string">"v2"</span>,  <span class="comment"># ← Version bump</span>
-    ttl=<span class="num">3600</span>,
+    version=&quot;v2&quot;,  # ← Version bump
+    ttl=3600,
 )
 
-<span class="comment"># Step 2: Dual-write during migration</span>
-<span class="keyword">def</span> <span class="func">dual_write</span>(entity_id, features, features_v2):
-    <span class="string">"""Write to both v1 and v2 during migration."""</span>
-    pipe = client.pipeline(transaction=<span class="keyword">False</span>)
+# Step 2: Dual-write during migration
+def dual_write(entity_id, features, features_v2):
+    &quot;&quot;&quot;Write to both v1 and v2 during migration.&quot;&quot;&quot;
+    pipe = client.pipeline(transaction=False)
 
-    <span class="comment"># Write v1</span>
-    key_v1 = <span class="string">f"fs:v1:user_profile:{entity_id}"</span>
-    pipe.hset(key_v1, mapping={k: <span class="func">str</span>(v) <span class="keyword">for</span> k, v <span class="keyword">in</span> features.items()})
-    pipe.expire(key_v1, <span class="num">3600</span>)
+    # Write v1
+    key_v1 = f&quot;fs:v1:user_profile:{entity_id}&quot;
+    pipe.hset(key_v1, mapping={k: str(v) for k, v in features.items()})
+    pipe.expire(key_v1, 3600)
 
-    <span class="comment"># Write v2 (includes new fields)</span>
-    key_v2 = <span class="string">f"fs:v2:user_profile:{entity_id}"</span>
-    pipe.hset(key_v2, mapping={k: <span class="func">str</span>(v) <span class="keyword">for</span> k, v <span class="keyword">in</span> features_v2.items()})
-    pipe.expire(key_v2, <span class="num">3600</span>)
+    # Write v2 (includes new fields)
+    key_v2 = f&quot;fs:v2:user_profile:{entity_id}&quot;
+    pipe.hset(key_v2, mapping={k: str(v) for k, v in features_v2.items()})
+    pipe.expire(key_v2, 3600)
 
     pipe.execute()
 
-<span class="comment"># Step 3: Migrate readers to v2</span>
-<span class="comment"># Step 4: Stop writing to v1</span>
-<span class="comment"># Step 5: Let v1 keys expire naturally (TTL)</span></code></pre>
-
-<div class="callout">
+# Step 3: Migrate readers to v2
+# Step 4: Stop writing to v1
+# Step 5: Let v1 keys expire naturally (TTL)
+</code></pre>
 <p><strong>Zero-downtime migration:</strong> Because Valkey keys include the version prefix, v1 and v2 coexist safely. Dual-write during migration, switch readers, then let v1 expire. No data loss, no downtime.</p>
-</div>
-
 <h2>Pattern 4: Connection Pooling</h2>
 <p>In production, always use connection pooling to avoid creating a new TCP connection per request:</p>
+<pre><code>import redis
 
-<pre><code><span class="keyword">import</span> redis
-
-<span class="comment"># Create a connection pool (once at app startup)</span>
+# Create a connection pool (once at app startup)
 pool = redis.ConnectionPool(
-    host=<span class="string">"localhost"</span>,
-    port=<span class="num">6379</span>,
-    max_connections=<span class="num">50</span>,    <span class="comment"># Max concurrent connections</span>
-    decode_responses=<span class="keyword">True</span>,
-    socket_connect_timeout=<span class="num">5</span>,
-    socket_timeout=<span class="num">2</span>,
-    retry_on_timeout=<span class="keyword">True</span>,
+    host=&quot;localhost&quot;,
+    port=6379,
+    max_connections=50,    # Max concurrent connections
+    decode_responses=True,
+    socket_connect_timeout=5,
+    socket_timeout=2,
+    retry_on_timeout=True,
 )
 
-<span class="comment"># Create client from pool (cheap — reuses connections)</span>
+# Create client from pool (cheap — reuses connections)
 client = redis.Redis(connection_pool=pool)
 
-<span class="comment"># Use with the feature store library</span>
+# Use with the feature store library
 store = ValkeyFeatureStore(client=client)
 
-<span class="comment"># Check pool stats</span>
-<span class="func">print</span>(<span class="string">f"Pool connections: {len(pool._available_connections)}"</span>)</code></pre>
-
+# Check pool stats
+print(f&quot;Pool connections: {len(pool._available_connections)}&quot;)
+</code></pre>
 <h2>Pattern 5: Error Handling &amp; Fallbacks</h2>
-<p>Handle Valkey failures gracefully — don't let a cache miss crash your prediction:</p>
-
-<pre><code><span class="keyword">def</span> <span class="func">safe_read_features</span>(store, view_name: str, entity_id: str, defaults: dict = <span class="keyword">None</span>):
-    <span class="string">"""Read features with error handling and fallback defaults."""</span>
-    <span class="keyword">try</span>:
+<p>Handle Valkey failures gracefully — don&#39;t let a cache miss crash your prediction:</p>
+<pre><code>def safe_read_features(store, view_name: str, entity_id: str, defaults: dict = None):
+    &quot;&quot;&quot;Read features with error handling and fallback defaults.&quot;&quot;&quot;
+    try:
         features = store.read(view_name, entity_id)
-        <span class="keyword">if</span> features:
-            <span class="keyword">return</span> features
-    <span class="keyword">except</span> redis.ConnectionError:
-        <span class="comment"># Valkey is down — use defaults</span>
-        <span class="func">print</span>(<span class="string">f"⚠️ Valkey connection error, using defaults"</span>)
-    <span class="keyword">except</span> redis.TimeoutError:
-        <span class="comment"># Valkey is slow — use defaults</span>
-        <span class="func">print</span>(<span class="string">f"⚠️ Valkey timeout, using defaults"</span>)
-    <span class="keyword">except</span> <span class="func">Exception</span> <span class="keyword">as</span> e:
-        <span class="func">print</span>(<span class="string">f"⚠️ Unexpected error: {e}"</span>)
+        if features:
+            return features
+    except redis.ConnectionError:
+        # Valkey is down — use defaults
+        print(f&quot;⚠️ Valkey connection error, using defaults&quot;)
+    except redis.TimeoutError:
+        # Valkey is slow — use defaults
+        print(f&quot;⚠️ Valkey timeout, using defaults&quot;)
+    except Exception as e:
+        print(f&quot;⚠️ Unexpected error: {e}&quot;)
 
-    <span class="comment"># Return defaults so the model can still make a prediction</span>
-    <span class="keyword">return</span> defaults <span class="keyword">or</span> {}
+    # Return defaults so the model can still make a prediction
+    return defaults or {}
 
-<span class="comment"># Usage</span>
-features = safe_read_features(store, <span class="string">"user_risk_profile"</span>, <span class="string">"user_001"</span>,
-    defaults={<span class="string">"txn_count_1h"</span>: <span class="num">0</span>, <span class="string">"avg_txn_amount"</span>: <span class="num">50.0</span>, <span class="string">"fraud_score"</span>: <span class="num">0.5</span>})</code></pre>
-
+# Usage
+features = safe_read_features(store, &quot;user_risk_profile&quot;, &quot;user_001&quot;,
+    defaults={&quot;txn_count_1h&quot;: 0, &quot;avg_txn_amount&quot;: 50.0, &quot;fraud_score&quot;: 0.5})
+</code></pre>
 <h2>Pattern 6: Observability Metrics</h2>
 <p>Track key metrics for your feature store in production:</p>
-
-<pre><code><span class="keyword">def</span> <span class="func">get_store_metrics</span>() -> dict:
-    <span class="string">"""Collect feature store metrics for monitoring dashboards."""</span>
+<pre><code>def get_store_metrics() -&gt; dict:
+    &quot;&quot;&quot;Collect feature store metrics for monitoring dashboards.&quot;&quot;&quot;
     info = client.info()
 
-    <span class="keyword">return</span> {
-        <span class="comment"># Throughput</span>
-        <span class="string">"ops_per_second"</span>: info.get(<span class="string">"instantaneous_ops_per_sec"</span>, <span class="num">0</span>),
+    return {
+        # Throughput
+        &quot;ops_per_second&quot;: info.get(&quot;instantaneous_ops_per_sec&quot;, 0),
 
-        <span class="comment"># Memory</span>
-        <span class="string">"memory_used_mb"</span>: <span class="func">round</span>(info[<span class="string">"used_memory"</span>] / <span class="num">1048576</span>, <span class="num">1</span>),
-        <span class="string">"memory_peak_mb"</span>: <span class="func">round</span>(info[<span class="string">"used_memory_peak"</span>] / <span class="num">1048576</span>, <span class="num">1</span>),
+        # Memory
+        &quot;memory_used_mb&quot;: round(info[&quot;used_memory&quot;] / 1048576, 1),
+        &quot;memory_peak_mb&quot;: round(info[&quot;used_memory_peak&quot;] / 1048576, 1),
 
-        <span class="comment"># Connections</span>
-        <span class="string">"connected_clients"</span>: info.get(<span class="string">"connected_clients"</span>, <span class="num">0</span>),
+        # Connections
+        &quot;connected_clients&quot;: info.get(&quot;connected_clients&quot;, 0),
 
-        <span class="comment"># Keys</span>
-        <span class="string">"total_keys"</span>: info.get(<span class="string">"db0"</span>, {}).get(<span class="string">"keys"</span>, <span class="num">0</span>),
+        # Keys
+        &quot;total_keys&quot;: info.get(&quot;db0&quot;, {}).get(&quot;keys&quot;, 0),
 
-        <span class="comment"># Hit rate (if using Valkey as cache too)</span>
-        <span class="string">"keyspace_hits"</span>: info.get(<span class="string">"keyspace_hits"</span>, <span class="num">0</span>),
-        <span class="string">"keyspace_misses"</span>: info.get(<span class="string">"keyspace_misses"</span>, <span class="num">0</span>),
+        # Hit rate (if using Valkey as cache too)
+        &quot;keyspace_hits&quot;: info.get(&quot;keyspace_hits&quot;, 0),
+        &quot;keyspace_misses&quot;: info.get(&quot;keyspace_misses&quot;, 0),
     }
 
 metrics = get_store_metrics()
-<span class="func">print</span>(metrics)
-<span class="comment"># {'ops_per_second': 1250, 'memory_used_mb': 45.2, ...}</span></code></pre>
-
+print(metrics)
+# {&#39;ops_per_second&#39;: 1250, &#39;memory_used_mb&#39;: 45.2, ...}
+</code></pre>
 <h2>Production Checklist</h2>
 <table>
-<tr><th>Area</th><th>Pattern</th><th>Recommendation</th></tr>
-<tr><td>Connections</td><td>Connection pooling</td><td>Use <code>ConnectionPool</code> with <code>max_connections=50</code></td></tr>
-<tr><td>Timeouts</td><td>Socket timeouts</td><td>Set <code>socket_timeout=2</code>, <code>socket_connect_timeout=5</code></td></tr>
-<tr><td>Retries</td><td>Retry on timeout</td><td>Enable <code>retry_on_timeout=True</code></td></tr>
-<tr><td>Freshness</td><td>Staleness detection</td><td>Check <code>_updated_at</code> before inference, alert on stale</td></tr>
-<tr><td>TTL</td><td>Feature expiry</td><td>Set TTL on all feature views (e.g., 1h–24h)</td></tr>
-<tr><td>Versioning</td><td>Key prefix versions</td><td>Use <code>fs:v1:</code>, <code>fs:v2:</code> for schema changes</td></tr>
-<tr><td>Fallbacks</td><td>Default values</td><td>Always have sensible defaults for model features</td></tr>
-<tr><td>Monitoring</td><td>Health checks</td><td>Ping + write/read test on <code>/health</code> endpoint</td></tr>
-<tr><td>Memory</td><td>Maxmemory policy</td><td>Set <code>maxmemory-policy allkeys-lru</code> in production</td></tr>
-<tr><td>Persistence</td><td>RDB/AOF</td><td>Enable RDB snapshots for feature store durability</td></tr>
-</table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Pattern</th>
+<th>Recommendation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Connections</td>
+<td>Connection pooling</td>
+<td>Use <code>ConnectionPool</code> with <code>max_connections=50</code></td>
+</tr>
+<tr>
+<td>Timeouts</td>
+<td>Socket timeouts</td>
+<td>Set <code>socket_timeout=2</code>, <code>socket_connect_timeout=5</code></td>
+</tr>
+<tr>
+<td>Retries</td>
+<td>Retry on timeout</td>
+<td>Enable <code>retry_on_timeout=True</code></td>
+</tr>
+<tr>
+<td>Freshness</td>
+<td>Staleness detection</td>
+<td>Check <code>_updated_at</code> before inference, alert on stale</td>
+</tr>
+<tr>
+<td>TTL</td>
+<td>Feature expiry</td>
+<td>Set TTL on all feature views (e.g., 1h–24h)</td>
+</tr>
+<tr>
+<td>Versioning</td>
+<td>Key prefix versions</td>
+<td>Use <code>fs:v1:</code>, <code>fs:v2:</code> for schema changes</td>
+</tr>
+<tr>
+<td>Fallbacks</td>
+<td>Default values</td>
+<td>Always have sensible defaults for model features</td>
+</tr>
+<tr>
+<td>Monitoring</td>
+<td>Health checks</td>
+<td>Ping + write/read test on <code>/health</code> endpoint</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td>Maxmemory policy</td>
+<td>Set <code>maxmemory-policy allkeys-lru</code> in production</td>
+</tr>
+<tr>
+<td>Persistence</td>
+<td>RDB/AOF</td>
+<td>Enable RDB snapshots for feature store durability</td>
+</tr>
+</tbody></table>
+<p><strong>Congratulations!</strong> You&#39;ve completed all 6 cookbooks. You now know how to build, serve, stream, integrate, and operate a production feature store with Valkey. Check out the <a href="/demo/feature-store.html">interactive demo</a> to experiment with these patterns in your browser.</p>
 
-<div class="callout">
-<p><strong>Congratulations!</strong> You've completed all 6 cookbooks. You now know how to build, serve, stream, integrate, and operate a production feature store with Valkey. Check out the <a href="/demo/feature-store.html" style="color:var(--accent)">interactive demo</a> to experiment with these patterns in your browser.</p>
-</div>
 
 <div class="nav-prev-next">
-<a href="05-ml-integration.html" class="prev">
-<span class="label">← Previous</span>
-<span class="title">05 — ML Integration</span>
-</a>
-<a href="/cookbooks/feature-store/" class="next">
-<span class="label">Back to →</span>
-<span class="title">Feature Store Cookbooks</span>
-</a>
+<a href="05-ml-integration.html" class="prev"><span class="label">← Previous</span><span class="title">05 — ML Integration</span></a>
+<div></div>
 </div>
 </article>
+<button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg></button>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<script>function toggleTheme(){var b=document.body,l=b.classList.toggle("light");localStorage.setItem("theme",l?"light":"dark")}(function(){if(localStorage.getItem("theme")==="light")document.body.classList.add("light")})()</script>
 </body>
 </html>

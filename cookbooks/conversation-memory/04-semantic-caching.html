@@ -3,182 +3,250 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>04 Semantic Caching — Conversation Memory — Valkey for AI</title>
+<title>04 — Semantic Caching — Valkey for AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../cookbook.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<style>
+body.light .nav{background:rgba(255,255,255,.9)!important}
+body.light pre{background:rgba(0,0,0,.03)!important;border-color:rgba(0,0,0,.08)!important}
+body.light code{color:#1d1d1f}
+body.light .callout{background:rgba(0,0,0,.02);border-color:rgba(0,0,0,.08)}
+body.light table{border-color:rgba(0,0,0,.08)}
+body.light th{background:rgba(0,0,0,.04)}
+body.light td{border-color:rgba(0,0,0,.06)}
+body.light{--bg:#fff;--bg-elevated:#f5f5f7;--bg-card:rgba(0,0,0,.03);--bg-card-hover:rgba(0,0,0,.06);--brd:rgba(0,0,0,.08);--t1:#1d1d1f;--t2:rgba(29,29,31,.6);--t3:rgba(29,29,31,.4)}
+.theme-toggle{background:rgba(128,128,128,.12);border:1px solid rgba(128,128,128,.2);border-radius:100px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:fixed;top:18px;right:24px;z-index:1001}
+pre{position:relative}
+pre code.hljs{background:transparent!important;padding:0}
+</style>
 </head>
 <body>
-<nav class="nav"><div class="nav-inner">
-<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
-<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/conversation-memory/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai" target="_blank">GitHub</a></div>
-</div></nav>
-
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/#frameworks">Frameworks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
 <article>
 <div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/conversation-memory/">Conversation Memory</a> → 04 Semantic Caching</div>
 <div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~20 min</span></div>
+<h1>Semantic Caching</h1>
 
-<h1>Semantic Caching for <span class="gradient">LLM Responses</span></h1>
-<p class="lead">Cache LLM responses by meaning, not exact match. When a user asks something similar to a previous question, return the cached answer instantly — saving seconds of latency and dollars in API costs.</p>
 
 <h2>The Problem</h2>
 <p>LLM API calls are expensive ($0.01-$0.10+ per call) and slow (1-10 seconds). Users often ask similar questions with different wording:</p>
 <ul>
-<li>"What is Valkey?" → "Can you explain Valkey?" → "Tell me about Valkey"</li>
+<li>&quot;What is Valkey?&quot; → &quot;Can you explain Valkey?&quot; → &quot;Tell me about Valkey&quot;</li>
 <li>All three should return the same cached answer</li>
 </ul>
 <p>Exact-match caching (<code>GET cache:{hash}</code>) misses these. Semantic caching uses vector similarity to match by meaning.</p>
-
 <h2>Architecture</h2>
-<pre><code><span class="comment">User: "Can you explain Valkey?"</span>
-<span class="comment">        │</span>
-<span class="comment">        ▼</span>
-<span class="comment">   Embed query → [0.12, -0.45, ...]</span>
-<span class="comment">        │</span>
-<span class="comment">        ▼</span>
-<span class="comment">   FT.SEARCH cache_idx KNN 1 → score 0.95</span>
-<span class="comment">        │</span>
-<span class="comment">        ├── score ≥ 0.90 → ✅ Cache HIT → return cached response</span>
-<span class="comment">        └── score < 0.90 → ❌ Cache MISS → call LLM → cache result</span></code></pre>
-
+<pre><code>User: &quot;Can you explain Valkey?&quot;
+        │
+        ▼
+   Embed query → [0.12, -0.45, ...]
+        │
+        ▼
+   FT.SEARCH cache_idx KNN 1 → score 0.95
+        │
+        ├── score ≥ 0.90 → ✅ Cache HIT → return cached response
+        └── score &lt; 0.90 → ❌ Cache MISS → call LLM → cache result
+</code></pre>
 <h2>Step 1: Create the Cache Index</h2>
-<pre><code><span class="keyword">from</span> glide <span class="keyword">import</span> (
+<pre><code>from glide import (
     ft, VectorField, VectorAlgorithm, VectorFieldAttributesHnsw,
     VectorType, DistanceMetricType, NumericField,
     FtCreateOptions, DataType,
 )
 
-<span class="keyword">async def</span> <span class="func">create_cache_index</span>(client):
-    existing = <span class="keyword">await</span> ft.list(client)
-    <span class="keyword">if</span> <span class="string">b"cache_idx"</span> <span class="keyword">in</span> existing:
-        <span class="keyword">return</span>
+async def create_cache_index(client):
+    existing = await ft.list(client)
+    if b&quot;cache_idx&quot; in existing:
+        return
 
     hnsw = VectorFieldAttributesHnsw(
-        dimensions=<span class="num">1536</span>,
+        dimensions=1536,
         distance_metric=DistanceMetricType.COSINE,
         type=VectorType.FLOAT32,
     )
-    <span class="keyword">await</span> ft.create(
-        client, <span class="string">"cache_idx"</span>,
+    await ft.create(
+        client, &quot;cache_idx&quot;,
         schema=[
-            NumericField(<span class="string">"$.created_at"</span>, alias=<span class="string">"created_at"</span>),
-            VectorField(<span class="string">"$.embedding"</span>, VectorAlgorithm.HNSW,
-                        alias=<span class="string">"embedding"</span>, attributes=hnsw),
+            NumericField(&quot;$.created_at&quot;, alias=&quot;created_at&quot;),
+            VectorField(&quot;$.embedding&quot;, VectorAlgorithm.HNSW,
+                        alias=&quot;embedding&quot;, attributes=hnsw),
         ],
-        options=FtCreateOptions(data_type=DataType.JSON, prefixes=[<span class="string">"llmcache:"</span>]),
-    )</code></pre>
-
+        options=FtCreateOptions(data_type=DataType.JSON, prefixes=[&quot;llmcache:&quot;]),
+    )
+</code></pre>
 <h2>Step 2: The Cache Lookup</h2>
-<pre><code><span class="keyword">import</span> json, struct, hashlib, time
-<span class="keyword">from</span> glide <span class="keyword">import</span> glide_json, FtSearchOptions
+<pre><code>import json, struct, hashlib, time
+from glide import glide_json, FtSearchOptions
 
-SIMILARITY_THRESHOLD = <span class="num">0.90</span>  <span class="comment"># Tune this: higher = stricter matching</span>
+SIMILARITY_THRESHOLD = 0.90  # Tune this: higher = stricter matching
 
-<span class="keyword">async def</span> <span class="func">cache_lookup</span>(client, query_embedding):
-    <span class="string">"""Check if a semantically similar query was already answered."""</span>
-    vec_bytes = struct.pack(<span class="string">f"&lt;</span>{len(query_embedding)}<span class="string">f"</span>, *query_embedding)
+async def cache_lookup(client, query_embedding):
+    &quot;&quot;&quot;Check if a semantically similar query was already answered.&quot;&quot;&quot;
+    vec_bytes = struct.pack(f&quot;&lt;{len(query_embedding)}f&quot;, *query_embedding)
 
-    result = <span class="keyword">await</span> ft.search(
-        client, <span class="string">"cache_idx"</span>,
-        <span class="string">"(*)==&gt;[KNN 1 @embedding $vec AS score]"</span>,
-        options=FtSearchOptions(params={<span class="string">"vec"</span>: vec_bytes}),
+    result = await ft.search(
+        client, &quot;cache_idx&quot;,
+        &quot;(*)==&gt;[KNN 1 @embedding $vec AS score]&quot;,
+        options=FtSearchOptions(params={&quot;vec&quot;: vec_bytes}),
     )
 
-    <span class="keyword">if</span> result <span class="keyword">and</span> len(result) >= <span class="num">2</span> <span class="keyword">and</span> result[<span class="num">1</span>]:
-        <span class="keyword">for</span> key, fields <span class="keyword">in</span> result[<span class="num">1</span>].items():
-            score = <span class="num">1.0</span> - float(fields[<span class="string">b"score"</span>])
-            <span class="keyword">if</span> score >= SIMILARITY_THRESHOLD:
-                doc = json.loads(fields[<span class="string">b"$"</span>])
-                <span class="keyword">return</span> {<span class="string">"hit"</span>: <span class="keyword">True</span>, <span class="string">"response"</span>: doc[<span class="string">"response"</span>], <span class="string">"score"</span>: score}
+    if result and len(result) &gt;= 2 and result[1]:
+        for key, fields in result[1].items():
+            score = 1.0 - float(fields[b&quot;score&quot;])
+            if score &gt;= SIMILARITY_THRESHOLD:
+                doc = json.loads(fields[b&quot;$&quot;])
+                return {&quot;hit&quot;: True, &quot;response&quot;: doc[&quot;response&quot;], &quot;score&quot;: score}
 
-    <span class="keyword">return</span> {<span class="string">"hit"</span>: <span class="keyword">False</span>}</code></pre>
-
+    return {&quot;hit&quot;: False}
+</code></pre>
 <h2>Step 3: Store a Cache Entry</h2>
-<pre><code><span class="keyword">async def</span> <span class="func">cache_store</span>(client, query, response, embedding, ttl=<span class="num">3600</span>):
-    <span class="string">"""Cache an LLM response with its query embedding."""</span>
-    cache_id = hashlib.md5(query.encode()).hexdigest()[:<span class="num">12</span>]
-    key = <span class="string">f"llmcache:</span>{cache_id}<span class="string">"</span>
+<pre><code>async def cache_store(client, query, response, embedding, ttl=3600):
+    &quot;&quot;&quot;Cache an LLM response with its query embedding.&quot;&quot;&quot;
+    cache_id = hashlib.md5(query.encode()).hexdigest()[:12]
+    key = f&quot;llmcache:{cache_id}&quot;
 
     doc = {
-        <span class="string">"query"</span>: query,
-        <span class="string">"response"</span>: response,
-        <span class="string">"embedding"</span>: embedding,
-        <span class="string">"created_at"</span>: time.time(),
+        &quot;query&quot;: query,
+        &quot;response&quot;: response,
+        &quot;embedding&quot;: embedding,
+        &quot;created_at&quot;: time.time(),
     }
-    <span class="keyword">await</span> glide_json.set(client, key, <span class="string">"$"</span>, json.dumps(doc))
-    <span class="keyword">await</span> client.expire(key, ttl)  <span class="comment"># Auto-expire stale cache</span></code></pre>
-
+    await glide_json.set(client, key, &quot;$&quot;, json.dumps(doc))
+    await client.expire(key, ttl)  # Auto-expire stale cache
+</code></pre>
 <h2>Step 4: The Complete Cache-Aware Chat Function</h2>
-<pre><code><span class="keyword">async def</span> <span class="func">chat_with_cache</span>(client, user_message):
-    <span class="comment"># 1. Embed the query</span>
+<pre><code>async def chat_with_cache(client, user_message):
+    # 1. Embed the query
     embedding = get_embedding(user_message)
 
-    <span class="comment"># 2. Check semantic cache</span>
-    cached = <span class="keyword">await</span> cache_lookup(client, embedding)
-    <span class="keyword">if</span> cached[<span class="string">"hit"</span>]:
-        print(<span class="string">f"⚡ Cache HIT (similarity: {cached['score']:.3f})"</span>)
-        <span class="keyword">return</span> cached[<span class="string">"response"</span>]
+    # 2. Check semantic cache
+    cached = await cache_lookup(client, embedding)
+    if cached[&quot;hit&quot;]:
+        print(f&quot;⚡ Cache HIT (similarity: {cached[&#39;score&#39;]:.3f})&quot;)
+        return cached[&quot;response&quot;]
 
-    <span class="comment"># 3. Cache miss — call the LLM</span>
-    print(<span class="string">"🔄 Cache MISS — calling LLM..."</span>)
-    response = call_llm(user_message)  <span class="comment"># your LLM call here</span>
+    # 3. Cache miss — call the LLM
+    print(&quot;🔄 Cache MISS — calling LLM...&quot;)
+    response = call_llm(user_message)  # your LLM call here
 
-    <span class="comment"># 4. Store in cache for next time</span>
-    <span class="keyword">await</span> cache_store(client, user_message, response, embedding)
+    # 4. Store in cache for next time
+    await cache_store(client, user_message, response, embedding)
 
-    <span class="keyword">return</span> response
+    return response
 
 
-<span class="comment"># First call: cache miss, calls LLM (~2 seconds)</span>
-<span class="keyword">await</span> chat_with_cache(client, <span class="string">"What is Valkey?"</span>)
-<span class="comment"># 🔄 Cache MISS — calling LLM...</span>
+# First call: cache miss, calls LLM (~2 seconds)
+await chat_with_cache(client, &quot;What is Valkey?&quot;)
+# 🔄 Cache MISS — calling LLM...
 
-<span class="comment"># Second call: cache hit, instant (~3ms)</span>
-<span class="keyword">await</span> chat_with_cache(client, <span class="string">"Can you explain Valkey?"</span>)
-<span class="comment"># ⚡ Cache HIT (similarity: 0.953)</span></code></pre>
-
+# Second call: cache hit, instant (~3ms)
+await chat_with_cache(client, &quot;Can you explain Valkey?&quot;)
+# ⚡ Cache HIT (similarity: 0.953)
+</code></pre>
 <h2>Tuning the Similarity Threshold</h2>
 <table>
-<tr><th>Threshold</th><th>Behavior</th><th>Use case</th></tr>
-<tr><td><code>0.98</code></td><td>Near-exact match only</td><td>Factual queries where precision matters</td></tr>
-<tr><td><code>0.92</code></td><td>Same intent, different wording</td><td>General chatbot (recommended start)</td></tr>
-<tr><td><code>0.85</code></td><td>Broadly similar topics</td><td>FAQ-style bots with limited topics</td></tr>
-</table>
+<thead>
+<tr>
+<th>Threshold</th>
+<th>Behavior</th>
+<th>Use case</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>0.98</code></td>
+<td>Near-exact match only</td>
+<td>Factual queries where precision matters</td>
+</tr>
+<tr>
+<td><code>0.92</code></td>
+<td>Same intent, different wording</td>
+<td>General chatbot (recommended start)</td>
+</tr>
+<tr>
+<td><code>0.85</code></td>
+<td>Broadly similar topics</td>
+<td>FAQ-style bots with limited topics</td>
+</tr>
+</tbody></table>
 <p>Start at 0.92 and adjust based on your false-positive rate.</p>
-
 <h2>Cost Impact</h2>
 <p>With a 40% cache hit rate (typical for customer support):</p>
 <table>
-<tr><th>Metric</th><th>Without cache</th><th>With semantic cache</th></tr>
-<tr><td>LLM calls / 1000 requests</td><td>1,000</td><td>600</td></tr>
-<tr><td>Avg latency</td><td>~2,000ms</td><td>~1,200ms</td></tr>
-<tr><td>Cost (at $0.01/call)</td><td>$10.00</td><td>$6.00</td></tr>
-<tr><td>Cache lookup overhead</td><td>—</td><td>~3ms</td></tr>
-</table>
-
+<thead>
+<tr>
+<th>Metric</th>
+<th>Without cache</th>
+<th>With semantic cache</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>LLM calls / 1000 requests</td>
+<td>1,000</td>
+<td>600</td>
+</tr>
+<tr>
+<td>Avg latency</td>
+<td>~2,000ms</td>
+<td>~1,200ms</td>
+</tr>
+<tr>
+<td>Cost (at $0.01/call)</td>
+<td>$10.00</td>
+<td>$6.00</td>
+</tr>
+<tr>
+<td>Cache lookup overhead</td>
+<td>—</td>
+<td>~3ms</td>
+</tr>
+</tbody></table>
 <h2>Valkey Commands Reference</h2>
 <table>
-<tr><th>Operation</th><th>Command</th><th>Latency</th></tr>
-<tr><td>Cache lookup</td><td><code>FT.SEARCH cache_idx KNN 1</code></td><td>~1-3ms</td></tr>
-<tr><td>Cache store</td><td><code>JSON.SET llmcache:{id} $ '{...}'</code></td><td>~0.2ms</td></tr>
-<tr><td>Set TTL</td><td><code>EXPIRE llmcache:{id} 3600</code></td><td>~0.1ms</td></tr>
-<tr><td>Invalidate entry</td><td><code>DEL llmcache:{id}</code></td><td>~0.1ms</td></tr>
-<tr><td>Flush all cache</td><td><code>FT.DROPINDEX cache_idx</code></td><td>~1ms</td></tr>
-</table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Command</th>
+<th>Latency</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Cache lookup</td>
+<td><code>FT.SEARCH cache_idx KNN 1</code></td>
+<td>~1-3ms</td>
+</tr>
+<tr>
+<td>Cache store</td>
+<td><code>JSON.SET llmcache:{id} $ &#39;{...}&#39;</code></td>
+<td>~0.2ms</td>
+</tr>
+<tr>
+<td>Set TTL</td>
+<td><code>EXPIRE llmcache:{id} 3600</code></td>
+<td>~0.1ms</td>
+</tr>
+<tr>
+<td>Invalidate entry</td>
+<td><code>DEL llmcache:{id}</code></td>
+<td>~0.1ms</td>
+</tr>
+<tr>
+<td>Flush all cache</td>
+<td><code>FT.DROPINDEX cache_idx</code></td>
+<td>~1ms</td>
+</tr>
+</tbody></table>
+<p><strong>What&#39;s Next:</strong> We&#39;ve covered conversation history, session management, semantic memory, and caching. In the final cookbook, we&#39;ll add agent state — checkpointing multi-step reasoning and logging tool calls with Valkey Streams.</p>
 
-<div class="callout">
-<p><strong>What's Next:</strong> We've covered conversation history, session management, semantic memory, and caching. In the final cookbook, we'll add agent state — checkpointing multi-step reasoning and logging tool calls with Valkey Streams.</p>
-</div>
 
 <div class="nav-prev-next">
-<a href="03-semantic-memory.html">
-<span class="label">← Previous</span>
-<span class="title">03 — Semantic Memory</span>
-</a>
-<a href="05-agent-state.html" class="next">
-<span class="label">Next →</span>
-<span class="title">05 — Agent State & Tool Results</span>
-</a>
+<a href="03-semantic-memory.html" class="prev"><span class="label">← Previous</span><span class="title">03 — Semantic Memory</span></a>
+<a href="05-agent-state.html" class="next"><span class="label">Next →</span><span class="title">05 — Agent State</span></a>
 </div>
 </article>
+<button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg></button>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<script>function toggleTheme(){var b=document.body,l=b.classList.toggle("light");localStorage.setItem("theme",l?"light":"dark")}(function(){if(localStorage.getItem("theme")==="light")document.body.classList.add("light")})()</script>
 </body>
 </html>

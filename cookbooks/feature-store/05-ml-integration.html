@@ -3,293 +3,317 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>05 — ML Model Integration — Valkey for AI</title>
+<title>05 — ML Integration — Valkey for AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../cookbook.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<style>
+body.light .nav{background:rgba(255,255,255,.9)!important}
+body.light pre{background:rgba(0,0,0,.03)!important;border-color:rgba(0,0,0,.08)!important}
+body.light code{color:#1d1d1f}
+body.light .callout{background:rgba(0,0,0,.02);border-color:rgba(0,0,0,.08)}
+body.light table{border-color:rgba(0,0,0,.08)}
+body.light th{background:rgba(0,0,0,.04)}
+body.light td{border-color:rgba(0,0,0,.06)}
+body.light{--bg:#fff;--bg-elevated:#f5f5f7;--bg-card:rgba(0,0,0,.03);--bg-card-hover:rgba(0,0,0,.06);--brd:rgba(0,0,0,.08);--t1:#1d1d1f;--t2:rgba(29,29,31,.6);--t3:rgba(29,29,31,.4)}
+.theme-toggle{background:rgba(128,128,128,.12);border:1px solid rgba(128,128,128,.2);border-radius:100px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:fixed;top:18px;right:24px;z-index:1001}
+pre{position:relative}
+pre code.hljs{background:transparent!important;padding:0}
+</style>
 </head>
 <body>
-<nav class="nav"><div class="nav-inner">
-<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
-<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/feature-store/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div>
-</div></nav>
-
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/#frameworks">Frameworks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
 <article>
 <div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/feature-store/">Feature Store</a> → 05 ML Integration</div>
 <div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~25 min</span></div>
+<h1>ML Integration</h1>
 
-<h1>ML Model <span class="gradient">Integration</span></h1>
-<p class="lead">Serve feature vectors from Valkey directly to scikit-learn, NumPy, and LLM chains. Build a fraud detection inference pipeline and a FastAPI prediction endpoint.</p>
 
 <h2>The Prediction Pipeline</h2>
 <p>At inference time, your model needs a feature vector. The pipeline looks like:</p>
-<pre><code><span class="comment"># Request → Fetch Features → Build Vector → Model.predict() → Response</span>
-<span class="comment">#              ↑                                    ↑</span>
-<span class="comment">#        Valkey (~0.1ms)                    scikit-learn (~1ms)</span></code></pre>
-<p>The goal: keep feature fetching so fast that it's invisible compared to model inference.</p>
-
+<pre><code># Request → Fetch Features → Build Vector → Model.predict() → Response
+#              ↑                                    ↑
+#        Valkey (~0.1ms)                    scikit-learn (~1ms)
+</code></pre>
+<p>The goal: keep feature fetching so fast that it&#39;s invisible compared to model inference.</p>
 <h2>Example 1: Fraud Detection with scikit-learn</h2>
 <p>A fraud model trained on 4 features. At inference, we fetch them from Valkey and predict:</p>
+<pre><code>import numpy as np
+from src import ValkeyFeatureStore, Entity, FeatureView, Feature, FeatureType
 
-<pre><code><span class="keyword">import</span> numpy <span class="keyword">as</span> np
-<span class="keyword">from</span> src <span class="keyword">import</span> ValkeyFeatureStore, Entity, FeatureView, Feature, FeatureType
+# Setup store (same as Cookbook 01)
+store = ValkeyFeatureStore(host=&quot;localhost&quot;, port=6379)
 
-<span class="comment"># Setup store (same as Cookbook 01)</span>
-store = ValkeyFeatureStore(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>)
-
-user = Entity(name=<span class="string">"user"</span>, join_keys=[<span class="string">"user_id"</span>])
+user = Entity(name=&quot;user&quot;, join_keys=[&quot;user_id&quot;])
 risk_features = FeatureView(
-    name=<span class="string">"user_risk_profile"</span>,
+    name=&quot;user_risk_profile&quot;,
     entity=user,
     features=[
-        Feature(<span class="string">"txn_count_1h"</span>, FeatureType.INT),
-        Feature(<span class="string">"avg_txn_amount"</span>, FeatureType.FLOAT),
-        Feature(<span class="string">"unique_merchants_24h"</span>, FeatureType.INT),
-        Feature(<span class="string">"fraud_score"</span>, FeatureType.FLOAT),
+        Feature(&quot;txn_count_1h&quot;, FeatureType.INT),
+        Feature(&quot;avg_txn_amount&quot;, FeatureType.FLOAT),
+        Feature(&quot;unique_merchants_24h&quot;, FeatureType.INT),
+        Feature(&quot;fraud_score&quot;, FeatureType.FLOAT),
     ],
-    ttl=<span class="num">86400</span>,
+    ttl=86400,
 )
 store.register(risk_features)
 
-<span class="comment"># Seed some features</span>
-store.write(<span class="string">"user_risk_profile"</span>, <span class="string">"user_001"</span>, {
-    <span class="string">"txn_count_1h"</span>: <span class="num">12</span>,
-    <span class="string">"avg_txn_amount"</span>: <span class="num">85.50</span>,
-    <span class="string">"unique_merchants_24h"</span>: <span class="num">4</span>,
-    <span class="string">"fraud_score"</span>: <span class="num">0.15</span>,
+# Seed some features
+store.write(&quot;user_risk_profile&quot;, &quot;user_001&quot;, {
+    &quot;txn_count_1h&quot;: 12,
+    &quot;avg_txn_amount&quot;: 85.50,
+    &quot;unique_merchants_24h&quot;: 4,
+    &quot;fraud_score&quot;: 0.15,
 })
 
-<span class="comment"># ── Inference Time ─────────────────────────────────────────────────</span>
+# ── Inference Time ─────────────────────────────────────────────────
 
-<span class="keyword">def</span> <span class="func">predict_fraud</span>(user_id: str) -> dict:
-    <span class="string">"""Fetch features from Valkey and run fraud prediction."""</span>
+def predict_fraud(user_id: str) -&gt; dict:
+    &quot;&quot;&quot;Fetch features from Valkey and run fraud prediction.&quot;&quot;&quot;
 
-    <span class="comment"># 1. Fetch features (~0.1ms)</span>
+    # 1. Fetch features (~0.1ms)
     features = store.read(
-        <span class="string">"user_risk_profile"</span>,
+        &quot;user_risk_profile&quot;,
         user_id,
-        [<span class="string">"txn_count_1h"</span>, <span class="string">"avg_txn_amount"</span>, <span class="string">"unique_merchants_24h"</span>],
+        [&quot;txn_count_1h&quot;, &quot;avg_txn_amount&quot;, &quot;unique_merchants_24h&quot;],
     )
 
-    <span class="keyword">if not</span> features:
-        <span class="keyword">return</span> {<span class="string">"error"</span>: <span class="string">"No features found"</span>}
+    if not features:
+        return {&quot;error&quot;: &quot;No features found&quot;}
 
-    <span class="comment"># 2. Build NumPy feature vector</span>
+    # 2. Build NumPy feature vector
     vector = np.array([[
-        features[<span class="string">"txn_count_1h"</span>],
-        features[<span class="string">"avg_txn_amount"</span>],
-        features[<span class="string">"unique_merchants_24h"</span>],
+        features[&quot;txn_count_1h&quot;],
+        features[&quot;avg_txn_amount&quot;],
+        features[&quot;unique_merchants_24h&quot;],
     ]])
 
-    <span class="comment"># 3. Run model (replace with your trained model)</span>
-    <span class="comment"># prediction = model.predict_proba(vector)[0][1]</span>
-    <span class="comment"># For demo, use a simple heuristic:</span>
-    score = <span class="num">0.1</span>
-    <span class="keyword">if</span> features[<span class="string">"txn_count_1h"</span>] > <span class="num">10</span>: score += <span class="num">0.3</span>
-    <span class="keyword">if</span> features[<span class="string">"avg_txn_amount"</span>] > <span class="num">200</span>: score += <span class="num">0.2</span>
-    <span class="keyword">if</span> features[<span class="string">"unique_merchants_24h"</span>] > <span class="num">8</span>: score += <span class="num">0.2</span>
+    # 3. Run model (replace with your trained model)
+    # prediction = model.predict_proba(vector)[0][1]
+    # For demo, use a simple heuristic:
+    score = 0.1
+    if features[&quot;txn_count_1h&quot;] &gt; 10: score += 0.3
+    if features[&quot;avg_txn_amount&quot;] &gt; 200: score += 0.2
+    if features[&quot;unique_merchants_24h&quot;] &gt; 8: score += 0.2
 
-    <span class="keyword">return</span> {
-        <span class="string">"user_id"</span>: user_id,
-        <span class="string">"fraud_probability"</span>: <span class="func">round</span>(score, <span class="num">3</span>),
-        <span class="string">"is_fraud"</span>: score > <span class="num">0.5</span>,
-        <span class="string">"features_used"</span>: features,
+    return {
+        &quot;user_id&quot;: user_id,
+        &quot;fraud_probability&quot;: round(score, 3),
+        &quot;is_fraud&quot;: score &gt; 0.5,
+        &quot;features_used&quot;: features,
     }
 
-result = predict_fraud(<span class="string">"user_001"</span>)
-<span class="func">print</span>(result)
-<span class="comment"># {'user_id': 'user_001', 'fraud_probability': 0.4, 'is_fraud': False,</span>
-<span class="comment">#  'features_used': {'txn_count_1h': 12, 'avg_txn_amount': 85.5, ...}}</span></code></pre>
-
+result = predict_fraud(&quot;user_001&quot;)
+print(result)
+# {&#39;user_id&#39;: &#39;user_001&#39;, &#39;fraud_probability&#39;: 0.4, &#39;is_fraud&#39;: False,
+#  &#39;features_used&#39;: {&#39;txn_count_1h&#39;: 12, &#39;avg_txn_amount&#39;: 85.5, ...}}
+</code></pre>
 <h2>Example 2: Multi-View Feature Vector</h2>
 <p>A recommendation model needs features from both user and item views:</p>
-
-<pre><code><span class="comment"># Register item features</span>
-item = Entity(name=<span class="string">"item"</span>, join_keys=[<span class="string">"item_id"</span>])
+<pre><code># Register item features
+item = Entity(name=&quot;item&quot;, join_keys=[&quot;item_id&quot;])
 item_features = FeatureView(
-    name=<span class="string">"item_catalog"</span>,
+    name=&quot;item_catalog&quot;,
     entity=item,
     features=[
-        Feature(<span class="string">"price"</span>, FeatureType.FLOAT),
-        Feature(<span class="string">"category"</span>, FeatureType.STRING),
-        Feature(<span class="string">"popularity"</span>, FeatureType.FLOAT),
+        Feature(&quot;price&quot;, FeatureType.FLOAT),
+        Feature(&quot;category&quot;, FeatureType.STRING),
+        Feature(&quot;popularity&quot;, FeatureType.FLOAT),
     ],
-    ttl=<span class="num">86400</span>,
+    ttl=86400,
 )
 store.register(item_features)
 
-<span class="comment"># Write item features</span>
-store.write(<span class="string">"item_catalog"</span>, <span class="string">"item_042"</span>, {
-    <span class="string">"price"</span>: <span class="num">29.99</span>,
-    <span class="string">"category"</span>: <span class="string">"electronics"</span>,
-    <span class="string">"popularity"</span>: <span class="num">0.85</span>,
+# Write item features
+store.write(&quot;item_catalog&quot;, &quot;item_042&quot;, {
+    &quot;price&quot;: 29.99,
+    &quot;category&quot;: &quot;electronics&quot;,
+    &quot;popularity&quot;: 0.85,
 })
 
-<span class="comment"># ── Recommendation inference ──────────────────────────────────────</span>
+# ── Recommendation inference ──────────────────────────────────────
 
-<span class="keyword">def</span> <span class="func">score_item_for_user</span>(user_id: str, item_id: str) -> float:
-    <span class="string">"""Score how likely a user is to click on an item."""</span>
+def score_item_for_user(user_id: str, item_id: str) -&gt; float:
+    &quot;&quot;&quot;Score how likely a user is to click on an item.&quot;&quot;&quot;
 
-    <span class="comment"># Fetch user features</span>
-    user_feats = store.read(<span class="string">"user_risk_profile"</span>, user_id,
-                            [<span class="string">"avg_txn_amount"</span>])
+    # Fetch user features
+    user_feats = store.read(&quot;user_risk_profile&quot;, user_id,
+                            [&quot;avg_txn_amount&quot;])
 
-    <span class="comment"># Fetch item features</span>
-    item_feats = store.read(<span class="string">"item_catalog"</span>, item_id,
-                            [<span class="string">"price"</span>, <span class="string">"popularity"</span>])
+    # Fetch item features
+    item_feats = store.read(&quot;item_catalog&quot;, item_id,
+                            [&quot;price&quot;, &quot;popularity&quot;])
 
-    <span class="keyword">if not</span> user_feats <span class="keyword">or not</span> item_feats:
-        <span class="keyword">return</span> <span class="num">0.0</span>
+    if not user_feats or not item_feats:
+        return 0.0
 
-    <span class="comment"># Simple scoring: users who spend more prefer pricier items</span>
-    price_affinity = <span class="func">min</span>(<span class="num">1.0</span>, user_feats[<span class="string">"avg_txn_amount"</span>] / (item_feats[<span class="string">"price"</span>] * <span class="num">10</span>))
-    score = price_affinity * <span class="num">0.4</span> + item_feats[<span class="string">"popularity"</span>] * <span class="num">0.6</span>
+    # Simple scoring: users who spend more prefer pricier items
+    price_affinity = min(1.0, user_feats[&quot;avg_txn_amount&quot;] / (item_feats[&quot;price&quot;] * 10))
+    score = price_affinity * 0.4 + item_feats[&quot;popularity&quot;] * 0.6
 
-    <span class="keyword">return</span> <span class="func">round</span>(score, <span class="num">3</span>)
+    return round(score, 3)
 
-<span class="comment"># Score candidates</span>
-items = [<span class="string">"item_042"</span>, <span class="string">"item_043"</span>, <span class="string">"item_044"</span>]
-scores = [(item_id, score_item_for_user(<span class="string">"user_001"</span>, item_id)) <span class="keyword">for</span> item_id <span class="keyword">in</span> items]
-ranked = <span class="func">sorted</span>(scores, key=<span class="keyword">lambda</span> x: x[<span class="num">1</span>], reverse=<span class="keyword">True</span>)
-<span class="func">print</span>(ranked)</code></pre>
-
+# Score candidates
+items = [&quot;item_042&quot;, &quot;item_043&quot;, &quot;item_044&quot;]
+scores = [(item_id, score_item_for_user(&quot;user_001&quot;, item_id)) for item_id in items]
+ranked = sorted(scores, key=lambda x: x[1], reverse=True)
+print(ranked)
+</code></pre>
 <h2>Example 3: FastAPI Prediction Endpoint</h2>
 <p>Serve predictions via a REST API with feature fetching built in:</p>
-
-<pre><code><span class="keyword">from</span> fastapi <span class="keyword">import</span> FastAPI, HTTPException
-<span class="keyword">from</span> pydantic <span class="keyword">import</span> BaseModel
-<span class="keyword">import</span> time
+<pre><code>from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import time
 
 app = FastAPI()
 
-<span class="comment"># Initialize store once at startup</span>
-store = ValkeyFeatureStore(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>)
-<span class="comment"># ... register feature views ...</span>
+# Initialize store once at startup
+store = ValkeyFeatureStore(host=&quot;localhost&quot;, port=6379)
+# ... register feature views ...
 
-<span class="keyword">class</span> <span class="func">PredictionResponse</span>(BaseModel):
+class PredictionResponse(BaseModel):
     user_id: str
     fraud_probability: float
     is_fraud: bool
     latency_ms: float
 
-@app.get(<span class="string">"/predict/fraud/{user_id}"</span>)
-<span class="keyword">async def</span> <span class="func">predict_fraud_endpoint</span>(user_id: str):
+@app.get(&quot;/predict/fraud/{user_id}&quot;)
+async def predict_fraud_endpoint(user_id: str):
     start = time.time()
 
-    <span class="comment"># Fetch features from Valkey</span>
+    # Fetch features from Valkey
     features = store.read(
-        <span class="string">"user_risk_profile"</span>, user_id,
-        [<span class="string">"txn_count_1h"</span>, <span class="string">"avg_txn_amount"</span>, <span class="string">"unique_merchants_24h"</span>],
+        &quot;user_risk_profile&quot;, user_id,
+        [&quot;txn_count_1h&quot;, &quot;avg_txn_amount&quot;, &quot;unique_merchants_24h&quot;],
     )
 
-    <span class="keyword">if not</span> features:
-        <span class="keyword">raise</span> HTTPException(status_code=<span class="num">404</span>, detail=<span class="string">"No features found"</span>)
+    if not features:
+        raise HTTPException(status_code=404, detail=&quot;No features found&quot;)
 
-    <span class="comment"># Run model prediction</span>
-    score = <span class="num">0.1</span>
-    <span class="keyword">if</span> features.get(<span class="string">"txn_count_1h"</span>, <span class="num">0</span>) > <span class="num">10</span>: score += <span class="num">0.3</span>
-    <span class="keyword">if</span> features.get(<span class="string">"avg_txn_amount"</span>, <span class="num">0</span>) > <span class="num">200</span>: score += <span class="num">0.2</span>
-    <span class="keyword">if</span> features.get(<span class="string">"unique_merchants_24h"</span>, <span class="num">0</span>) > <span class="num">8</span>: score += <span class="num">0.2</span>
+    # Run model prediction
+    score = 0.1
+    if features.get(&quot;txn_count_1h&quot;, 0) &gt; 10: score += 0.3
+    if features.get(&quot;avg_txn_amount&quot;, 0) &gt; 200: score += 0.2
+    if features.get(&quot;unique_merchants_24h&quot;, 0) &gt; 8: score += 0.2
 
-    elapsed = (time.time() - start) * <span class="num">1000</span>
+    elapsed = (time.time() - start) * 1000
 
-    <span class="keyword">return</span> PredictionResponse(
+    return PredictionResponse(
         user_id=user_id,
-        fraud_probability=<span class="func">round</span>(score, <span class="num">3</span>),
-        is_fraud=score > <span class="num">0.5</span>,
-        latency_ms=<span class="func">round</span>(elapsed, <span class="num">2</span>),
+        fraud_probability=round(score, 3),
+        is_fraud=score &gt; 0.5,
+        latency_ms=round(elapsed, 2),
     )
 
-<span class="comment"># Run: uvicorn app:app --reload</span>
-<span class="comment"># Test: curl localhost:8000/predict/fraud/user_001</span></code></pre>
-
+# Run: uvicorn app:app --reload
+# Test: curl localhost:8000/predict/fraud/user_001
+</code></pre>
 <h2>Example 4: LLM Context Enrichment</h2>
 <p>Fetch user features to personalize LLM prompts:</p>
+<pre><code>def build_personalized_prompt(user_id: str, question: str) -&gt; str:
+    &quot;&quot;&quot;Fetch user features and build a personalized LLM prompt.&quot;&quot;&quot;
 
-<pre><code><span class="keyword">def</span> <span class="func">build_personalized_prompt</span>(user_id: str, question: str) -> str:
-    <span class="string">"""Fetch user features and build a personalized LLM prompt."""</span>
+    # Fetch user context from Valkey
+    features = store.read(&quot;user_risk_profile&quot;, user_id)
 
-    <span class="comment"># Fetch user context from Valkey</span>
-    features = store.read(<span class="string">"user_risk_profile"</span>, user_id)
+    if features:
+        context = f&quot;&quot;&quot;User context:
+- Average transaction: ${features.get(&#39;avg_txn_amount&#39;, &#39;unknown&#39;)}
+- Transaction frequency: {features.get(&#39;txn_count_1h&#39;, &#39;unknown&#39;)}/hour
+- Merchant diversity: {features.get(&#39;unique_merchants_24h&#39;, &#39;unknown&#39;)} unique merchants&quot;&quot;&quot;
+    else:
+        context = &quot;No user context available.&quot;
 
-    <span class="keyword">if</span> features:
-        context = <span class="string">f"""User context:
-- Average transaction: ${features.get('avg_txn_amount', 'unknown')}
-- Transaction frequency: {features.get('txn_count_1h', 'unknown')}/hour
-- Merchant diversity: {features.get('unique_merchants_24h', 'unknown')} unique merchants"""</span>
-    <span class="keyword">else</span>:
-        context = <span class="string">"No user context available."</span>
-
-    prompt = <span class="string">f"""{context}
+    prompt = f&quot;&quot;&quot;{context}
 
 User question: {question}
 
-Please provide a personalized response based on the user's profile."""</span>
+Please provide a personalized response based on the user&#39;s profile.&quot;&quot;&quot;
 
-    <span class="keyword">return</span> prompt
+    return prompt
 
-<span class="comment"># Usage</span>
-prompt = build_personalized_prompt(<span class="string">"user_001"</span>, <span class="string">"Should I upgrade my account?"</span>)
-<span class="func">print</span>(prompt)
-<span class="comment"># Pass to your LLM: response = openai.chat(prompt)</span></code></pre>
-
+# Usage
+prompt = build_personalized_prompt(&quot;user_001&quot;, &quot;Should I upgrade my account?&quot;)
+print(prompt)
+# Pass to your LLM: response = openai.chat(prompt)
+</code></pre>
 <h2>Embedding Vectors</h2>
 <p>The feature store supports <code>FeatureType.VECTOR</code> for storing and retrieving embeddings:</p>
-
-<pre><code><span class="comment"># Define a view with vector features</span>
+<pre><code># Define a view with vector features
 embedding_view = FeatureView(
-    name=<span class="string">"user_embeddings"</span>,
+    name=&quot;user_embeddings&quot;,
     entity=user,
     features=[
-        Feature(<span class="string">"embedding"</span>, FeatureType.VECTOR),
-        Feature(<span class="string">"model_version"</span>, FeatureType.STRING),
+        Feature(&quot;embedding&quot;, FeatureType.VECTOR),
+        Feature(&quot;model_version&quot;, FeatureType.STRING),
     ],
-    ttl=<span class="num">604800</span>,  <span class="comment"># 7 days</span>
+    ttl=604800,  # 7 days
 )
 store.register(embedding_view)
 
-<span class="comment"># Write an embedding vector</span>
-store.write(<span class="string">"user_embeddings"</span>, <span class="string">"user_001"</span>, {
-    <span class="string">"embedding"</span>: [<span class="num">0.1</span>, <span class="num">0.23</span>, <span class="num">-0.05</span>, <span class="num">0.87</span>, <span class="num">0.42</span>],  <span class="comment"># list → comma-separated</span>
-    <span class="string">"model_version"</span>: <span class="string">"v2.1"</span>,
+# Write an embedding vector
+store.write(&quot;user_embeddings&quot;, &quot;user_001&quot;, {
+    &quot;embedding&quot;: [0.1, 0.23, -0.05, 0.87, 0.42],  # list → comma-separated
+    &quot;model_version&quot;: &quot;v2.1&quot;,
 })
 
-<span class="comment"># Read embedding back (auto-deserializes to list of floats)</span>
-result = store.read(<span class="string">"user_embeddings"</span>, <span class="string">"user_001"</span>)
-<span class="func">print</span>(result[<span class="string">"embedding"</span>])
-<span class="comment"># [0.1, 0.23, -0.05, 0.87, 0.42]</span>
+# Read embedding back (auto-deserializes to list of floats)
+result = store.read(&quot;user_embeddings&quot;, &quot;user_001&quot;)
+print(result[&quot;embedding&quot;])
+# [0.1, 0.23, -0.05, 0.87, 0.42]
 
-<span class="comment"># Convert to NumPy for model input</span>
-embedding = np.array(result[<span class="string">"embedding"</span>])
-<span class="func">print</span>(embedding.shape)
-<span class="comment"># (5,)</span></code></pre>
-
-<div class="callout">
-<p><strong>Vector storage:</strong> Vectors are serialized as comma-separated strings in the Hash field (e.g., <code>"0.1,0.23,-0.05,0.87,0.42"</code>). When read back, <code>FeatureType.VECTOR</code> automatically deserializes to <code>list[float]</code>. For large vectors (768+ dimensions), consider using Valkey's native vector search module instead.</p>
-</div>
-
+# Convert to NumPy for model input
+embedding = np.array(result[&quot;embedding&quot;])
+print(embedding.shape)
+# (5,)
+</code></pre>
+<p><strong>Vector storage:</strong> Vectors are serialized as comma-separated strings in the Hash field (e.g., <code>&quot;0.1,0.23,-0.05,0.87,0.42&quot;</code>). When read back, <code>FeatureType.VECTOR</code> automatically deserializes to <code>list[float]</code>. For large vectors (768+ dimensions), consider using Valkey&#39;s native vector search module instead.</p>
 <h2>Performance Summary</h2>
 <table>
-<tr><th>Integration</th><th>Feature Fetch</th><th>Model Inference</th><th>Total</th></tr>
-<tr><td>Fraud detection (4 features)</td><td>~0.1ms</td><td>~1ms</td><td>~1.1ms</td></tr>
-<tr><td>Recommendation (2 views)</td><td>~0.15ms</td><td>~0.5ms</td><td>~0.65ms</td></tr>
-<tr><td>Batch scoring (100 entities)</td><td>~0.3ms</td><td>~10ms</td><td>~10.3ms</td></tr>
-<tr><td>LLM context (user profile)</td><td>~0.1ms</td><td>~500ms (LLM)</td><td>~500ms</td></tr>
-</table>
+<thead>
+<tr>
+<th>Integration</th>
+<th>Feature Fetch</th>
+<th>Model Inference</th>
+<th>Total</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Fraud detection (4 features)</td>
+<td>~0.1ms</td>
+<td>~1ms</td>
+<td>~1.1ms</td>
+</tr>
+<tr>
+<td>Recommendation (2 views)</td>
+<td>~0.15ms</td>
+<td>~0.5ms</td>
+<td>~0.65ms</td>
+</tr>
+<tr>
+<td>Batch scoring (100 entities)</td>
+<td>~0.3ms</td>
+<td>~10ms</td>
+<td>~10.3ms</td>
+</tr>
+<tr>
+<td>LLM context (user profile)</td>
+<td>~0.1ms</td>
+<td>~500ms (LLM)</td>
+<td>~500ms</td>
+</tr>
+</tbody></table>
+<p><strong>What&#39;s Next:</strong> Learn production patterns — feature freshness monitoring, versioning, health checks, and observability.</p>
 
-<div class="callout">
-<p><strong>What's Next:</strong> Learn production patterns — feature freshness monitoring, versioning, health checks, and observability.</p>
-</div>
 
 <div class="nav-prev-next">
-<a href="04-streaming-updates.html" class="prev">
-<span class="label">← Previous</span>
-<span class="title">04 — Streaming Updates</span>
-</a>
-<a href="06-production.html" class="next">
-<span class="label">Next →</span>
-<span class="title">06 — Production Patterns</span>
-</a>
+<a href="04-streaming-updates.html" class="prev"><span class="label">← Previous</span><span class="title">04 — Streaming</span></a>
+<a href="06-production.html" class="next"><span class="label">Next →</span><span class="title">06 — Production</span></a>
 </div>
 </article>
+<button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg></button>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<script>function toggleTheme(){var b=document.body,l=b.classList.toggle("light");localStorage.setItem("theme",l?"light":"dark")}(function(){if(localStorage.getItem("theme")==="light")document.body.classList.add("light")})()</script>
 </body>
 </html>

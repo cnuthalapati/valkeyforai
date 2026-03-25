@@ -6,100 +6,170 @@
 <title>03 — Production with ElastiCache — Valkey for AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../cookbook.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<style>
+body.light .nav{background:rgba(255,255,255,.9)!important}
+body.light pre{background:rgba(0,0,0,.03)!important;border-color:rgba(0,0,0,.08)!important}
+body.light code{color:#1d1d1f}
+body.light .callout{background:rgba(0,0,0,.02);border-color:rgba(0,0,0,.08)}
+body.light table{border-color:rgba(0,0,0,.08)}
+body.light th{background:rgba(0,0,0,.04)}
+body.light td{border-color:rgba(0,0,0,.06)}
+body.light{--bg:#fff;--bg-elevated:#f5f5f7;--bg-card:rgba(0,0,0,.03);--bg-card-hover:rgba(0,0,0,.06);--brd:rgba(0,0,0,.08);--t1:#1d1d1f;--t2:rgba(29,29,31,.6);--t3:rgba(29,29,31,.4)}
+.theme-toggle{background:rgba(128,128,128,.12);border:1px solid rgba(128,128,128,.2);border-radius:100px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:fixed;top:18px;right:24px;z-index:1001}
+pre{position:relative}
+pre code.hljs{background:transparent!important;padding:0}
+</style>
 </head>
 <body>
-<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/#frameworks">Frameworks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
 <article>
 <div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/mem0/">Mem0</a> → 03 Production</div>
 <div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~20 min</span></div>
-<h1>Production with <span class="gradient">ElastiCache</span></h1>
-<p class="lead">Deploy Mem0 with Amazon ElastiCache for Valkey in production. Configure HNSW parameters, tune for scale, and run a durable memory layer for your AI agents.</p>
+<h1>Production with ElastiCache</h1>
+
 
 <h2>Step 1: ElastiCache for Valkey 8.2+</h2>
 <p>ElastiCache for Valkey 8.2 includes built-in vector search at no additional cost. Create a cluster via the AWS Console or CLI, then use the cluster endpoint as your Valkey URL.</p>
-<pre><code><span class="keyword">from</span> mem0 <span class="keyword">import</span> Memory
+<pre><code>from mem0 import Memory
 
 config = {
-    <span class="string">"vector_store"</span>: {
-        <span class="string">"provider"</span>: <span class="string">"valkey"</span>,
-        <span class="string">"config"</span>: {
-            <span class="comment"># Use your ElastiCache cluster endpoint</span>
-            <span class="string">"valkey_url"</span>: <span class="string">"valkey://your-cluster.xxxxx.use1.cache.amazonaws.com:6379"</span>,
-            <span class="string">"collection_name"</span>: <span class="string">"prod_memories"</span>,
-            <span class="string">"embedding_model_dims"</span>: <span class="num">1536</span>,
-            <span class="string">"index_type"</span>: <span class="string">"hnsw"</span>,
-            <span class="comment"># HNSW tuning parameters</span>
-            <span class="string">"hnsw_m"</span>: <span class="num">16</span>,              <span class="comment"># connections per node</span>
-            <span class="string">"hnsw_ef_construction"</span>: <span class="num">200</span>, <span class="comment"># build-time search width</span>
-            <span class="string">"hnsw_ef_runtime"</span>: <span class="num">10</span>,      <span class="comment"># query-time search width</span>
+    &quot;vector_store&quot;: {
+        &quot;provider&quot;: &quot;valkey&quot;,
+        &quot;config&quot;: {
+            # Use your ElastiCache cluster endpoint
+            &quot;valkey_url&quot;: &quot;valkey://your-cluster.xxxxx.use1.cache.amazonaws.com:6379&quot;,
+            &quot;collection_name&quot;: &quot;prod_memories&quot;,
+            &quot;embedding_model_dims&quot;: 1536,
+            &quot;index_type&quot;: &quot;hnsw&quot;,
+            # HNSW tuning parameters
+            &quot;hnsw_m&quot;: 16,              # connections per node
+            &quot;hnsw_ef_construction&quot;: 200, # build-time search width
+            &quot;hnsw_ef_runtime&quot;: 10,      # query-time search width
         }
     }
 }
-memory = Memory.from_config(config)</code></pre>
-
+memory = Memory.from_config(config)
+</code></pre>
 <h2>Step 2: HNSW Parameter Tuning</h2>
 <table>
-<tr><th>Parameter</th><th>Default</th><th>Effect</th><th>Recommendation</th></tr>
-<tr><td><code>hnsw_m</code></td><td>16</td><td>More connections = higher recall, more memory</td><td>16 for most cases, 32 for >1M memories</td></tr>
-<tr><td><code>hnsw_ef_construction</code></td><td>200</td><td>Higher = better index quality, slower build</td><td>200 default, increase to 400 for critical apps</td></tr>
-<tr><td><code>hnsw_ef_runtime</code></td><td>10</td><td>Higher = better recall, higher latency</td><td>10 for speed, 50+ for maximum recall</td></tr>
-<tr><td><code>index_type</code></td><td>hnsw</td><td>HNSW=fast approximate, FLAT=exact</td><td>HNSW for &gt;1000 memories, FLAT for small sets</td></tr>
-</table>
-
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Default</th>
+<th>Effect</th>
+<th>Recommendation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>hnsw_m</code></td>
+<td>16</td>
+<td>More connections = higher recall, more memory</td>
+<td>16 for most cases, 32 for &gt;1M memories</td>
+</tr>
+<tr>
+<td><code>hnsw_ef_construction</code></td>
+<td>200</td>
+<td>Higher = better index quality, slower build</td>
+<td>200 default, increase to 400 for critical apps</td>
+</tr>
+<tr>
+<td><code>hnsw_ef_runtime</code></td>
+<td>10</td>
+<td>Higher = better recall, higher latency</td>
+<td>10 for speed, 50+ for maximum recall</td>
+</tr>
+<tr>
+<td><code>index_type</code></td>
+<td>hnsw</td>
+<td>HNSW=fast approximate, FLAT=exact</td>
+<td>HNSW for &gt;1000 memories, FLAT for small sets</td>
+</tr>
+</tbody></table>
 <h2>Step 3: TLS for ElastiCache</h2>
-<pre><code><span class="comment"># ElastiCache with TLS enabled</span>
+<pre><code># ElastiCache with TLS enabled
 config = {
-    <span class="string">"vector_store"</span>: {
-        <span class="string">"provider"</span>: <span class="string">"valkey"</span>,
-        <span class="string">"config"</span>: {
-            <span class="string">"valkey_url"</span>: <span class="string">"valkeys://your-cluster.xxxxx.use1.cache.amazonaws.com:6379"</span>,
-            <span class="comment"># Note: valkeys:// (with 's') enables TLS</span>
-            <span class="string">"collection_name"</span>: <span class="string">"prod_memories"</span>,
-            <span class="string">"embedding_model_dims"</span>: <span class="num">1536</span>,
+    &quot;vector_store&quot;: {
+        &quot;provider&quot;: &quot;valkey&quot;,
+        &quot;config&quot;: {
+            &quot;valkey_url&quot;: &quot;valkeys://your-cluster.xxxxx.use1.cache.amazonaws.com:6379&quot;,
+            # Note: valkeys:// (with &#39;s&#39;) enables TLS
+            &quot;collection_name&quot;: &quot;prod_memories&quot;,
+            &quot;embedding_model_dims&quot;: 1536,
         }
     }
-}</code></pre>
-
+}
+</code></pre>
 <h2>Step 4: Monitoring</h2>
-<pre><code><span class="keyword">import</span> valkey
+<pre><code>import valkey
 
-<span class="comment"># Connect directly to check index health</span>
-client = valkey.from_url(<span class="string">"valkey://your-cluster:6379"</span>)
+# Connect directly to check index health
+client = valkey.from_url(&quot;valkey://your-cluster:6379&quot;)
 
-<span class="comment"># Check index info</span>
-info = client.execute_command(<span class="string">"FT.INFO"</span>, <span class="string">"prod_memories"</span>)
-<span class="func">print</span>(info)
+# Check index info
+info = client.execute_command(&quot;FT.INFO&quot;, &quot;prod_memories&quot;)
+print(info)
 
-<span class="comment"># Check memory usage</span>
-mem_info = client.info(<span class="string">"memory"</span>)
-<span class="func">print</span>(<span class="string">f"Used: {mem_info['used_memory_human']}"</span>)
+# Check memory usage
+mem_info = client.info(&quot;memory&quot;)
+print(f&quot;Used: {mem_info[&#39;used_memory_human&#39;]}&quot;)
 
-<span class="comment"># Count memories per user</span>
+# Count memories per user
 results = client.execute_command(
-    <span class="string">"FT.SEARCH"</span>, <span class="string">"prod_memories"</span>,
-    <span class="string">"@user_id:{alice}"</span>,
-    <span class="string">"LIMIT"</span>, <span class="string">"0"</span>, <span class="string">"0"</span>,  <span class="comment"># count only</span>
+    &quot;FT.SEARCH&quot;, &quot;prod_memories&quot;,
+    &quot;@user_id:{alice}&quot;,
+    &quot;LIMIT&quot;, &quot;0&quot;, &quot;0&quot;,  # count only
 )
-<span class="func">print</span>(<span class="string">f"Alice has {results[0]} memories"</span>)</code></pre>
-
+print(f&quot;Alice has {results[0]} memories&quot;)
+</code></pre>
 <h2>Production Checklist</h2>
 <table>
-<tr><th>Area</th><th>Recommendation</th></tr>
-<tr><td>ElastiCache</td><td>Use Valkey 8.2+ for built-in vector search</td></tr>
-<tr><td>TLS</td><td>Use <code>valkeys://</code> URL scheme for encrypted connections</td></tr>
-<tr><td>Multi-AZ</td><td>Enable for high availability</td></tr>
-<tr><td>HNSW M</td><td>16 default, 32 for large memory stores</td></tr>
-<tr><td>Embedding model</td><td>text-embedding-3-small (1536 dims, fast, cheap)</td></tr>
-<tr><td>Memory limits</td><td>Use maxmemory-policy to handle full memory</td></tr>
-<tr><td>Monitoring</td><td>Track FT.INFO for index size + memory usage</td></tr>
-</table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Recommendation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ElastiCache</td>
+<td>Use Valkey 8.2+ for built-in vector search</td>
+</tr>
+<tr>
+<td>TLS</td>
+<td>Use <code>valkeys://</code> URL scheme for encrypted connections</td>
+</tr>
+<tr>
+<td>Multi-AZ</td>
+<td>Enable for high availability</td>
+</tr>
+<tr>
+<td>HNSW M</td>
+<td>16 default, 32 for large memory stores</td>
+</tr>
+<tr>
+<td>Embedding model</td>
+<td>text-embedding-3-small (1536 dims, fast, cheap)</td>
+</tr>
+<tr>
+<td>Memory limits</td>
+<td>Use maxmemory-policy to handle full memory</td>
+</tr>
+<tr>
+<td>Monitoring</td>
+<td>Track FT.INFO for index size + memory usage</td>
+</tr>
+</tbody></table>
+<p><strong>Source:</strong> Mem0&#39;s Valkey connector: <a href="https://github.com/mem0ai/mem0/blob/main/mem0/vector_stores/valkey.py">valkey.py</a> and config: <a href="https://github.com/mem0ai/mem0/blob/main/mem0/configs/vector_stores/valkey.py">ValkeyConfig</a></p>
 
-<div class="callout">
-<p><strong>Source:</strong> Mem0's Valkey connector: <a href="https://github.com/mem0ai/mem0/blob/main/mem0/vector_stores/valkey.py" target="_blank" style="color:var(--accent)">valkey.py</a> and config: <a href="https://github.com/mem0ai/mem0/blob/main/mem0/configs/vector_stores/valkey.py" target="_blank" style="color:var(--accent)">ValkeyConfig</a></p>
-</div>
 
 <div class="nav-prev-next">
 <a href="02-multi-user-memory.html" class="prev"><span class="label">← Previous</span><span class="title">02 — Multi-User Memory</span></a>
-<a href="/cookbooks/mem0/" class="next"><span class="label">Back to →</span><span class="title">Mem0 Cookbooks</span></a>
+<div></div>
 </div>
-</article></body></html>
+</article>
+<button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg></button>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<script>function toggleTheme(){var b=document.body,l=b.classList.toggle("light");localStorage.setItem("theme",l?"light":"dark")}(function(){if(localStorage.getItem("theme")==="light")document.body.classList.add("light")})()</script>
+</body>
+</html>

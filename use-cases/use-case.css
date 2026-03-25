@@ -33,7 +33,7 @@ a{color:inherit;text-decoration:none}
 .uc-hero-tags span{padding:6px 16px;border-radius:100px;font-size:13px;font-weight:500;background:rgba(255,255,255,.06);border:1px solid var(--brd);color:var(--t2)}
 
 /* MAIN CONTENT */
-.uc-main{max-width:1200px;margin:0 auto;padding:0 24px 80px;display:grid;grid-template-columns:1fr 1fr;gap:32px}
+.uc-main{max-width:1400px;margin:0 auto;padding:0 24px 80px;display:grid;grid-template-columns:1fr 1fr;gap:32px}
 @media(max-width:900px){.uc-main{grid-template-columns:1fr}}
 
 /* PANELS */
@@ -60,7 +60,7 @@ a{color:inherit;text-decoration:none}
 .cb-badge.time{background:rgba(255,255,255,.07);color:var(--t3)}
 
 /* DEMO PANEL */
-.demo-frame{width:100%;height:100%;min-height:500px;border:none;border-radius:0 0 16px 16px;background:var(--bg2)}
+.demo-frame{width:100%;height:100%;min-height:650px;border:none;border-radius:0 0 16px 16px;background:var(--bg2)}
 .demo-placeholder{padding:40px;text-align:center}
 .demo-placeholder svg{opacity:.3;margin-bottom:16px}
 .demo-placeholder h3{font-size:18px;font-weight:700;margin-bottom:8px}
@@ -90,7 +90,7 @@ a{color:inherit;text-decoration:none}
 .notify-form input::placeholder{color:var(--t3)}
 
 /* GH SECTION */
-.uc-github{max-width:1200px;margin:0 auto;padding:0 24px 80px}
+.uc-github{max-width:1400px;margin:0 auto;padding:0 24px 80px}
 .uc-github-card{background:linear-gradient(135deg,rgba(99,102,241,.1),rgba(168,85,247,.1));border:1px solid rgba(99,102,241,.2);border-radius:var(--radius);padding:36px;display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap}
 .uc-github-card h3{font-size:22px;font-weight:800;margin-bottom:6px}
 .uc-github-card p{font-size:14px;color:var(--t2)}

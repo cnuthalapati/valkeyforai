@@ -3,26 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>01 Getting Started — LangChain — Valkey for AI</title>
+<title>01 — Getting Started with LangChain + Valkey — Valkey for AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../cookbook.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<style>
+body.light .nav{background:rgba(255,255,255,.9)!important}
+body.light pre{background:rgba(0,0,0,.03)!important;border-color:rgba(0,0,0,.08)!important}
+body.light code{color:#1d1d1f}
+body.light .callout{background:rgba(0,0,0,.02);border-color:rgba(0,0,0,.08)}
+body.light table{border-color:rgba(0,0,0,.08)}
+body.light th{background:rgba(0,0,0,.04)}
+body.light td{border-color:rgba(0,0,0,.06)}
+body.light{--bg:#fff;--bg-elevated:#f5f5f7;--bg-card:rgba(0,0,0,.03);--bg-card-hover:rgba(0,0,0,.06);--brd:rgba(0,0,0,.08);--t1:#1d1d1f;--t2:rgba(29,29,31,.6);--t3:rgba(29,29,31,.4)}
+.theme-toggle{background:rgba(128,128,128,.12);border:1px solid rgba(128,128,128,.2);border-radius:100px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:fixed;top:18px;right:24px;z-index:1001}
+pre{position:relative}
+pre code.hljs{background:transparent!important;padding:0}
+</style>
 </head>
 <body>
-<nav class="nav"><div class="nav-inner">
-<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
-<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/langchain/">Cookbooks</a><a href="/#frameworks">Frameworks</a><a href="https://github.com/langchain-ai/langchain-aws" target="_blank">GitHub</a></div>
-</div></nav>
-
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/#frameworks">Frameworks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
 <article>
 <div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/langchain/">LangChain</a> → 01 Getting Started</div>
-<div class="meta">
-<span class="diff-easy">Beginner</span>
-<span class="lang">Python</span>
-<span class="lang">~10 min</span>
-</div>
+<div class="meta"><span class="diff-easy">Beginner</span><span class="lang">Python</span><span class="lang">~15 min</span></div>
+<h1>Getting Started with LangChain + Valkey</h1>
 
-<h1>Getting Started</h1>
-<p class="lead">Install <code>langgraph-checkpoint-aws</code>, connect to Valkey, and persist your first LangGraph agent. By the end, your agent's state survives restarts.</p>
 
 <h2>Why Valkey for LangGraph?</h2>
 <p>LangGraph agents are stateless by default — every invocation starts fresh. <code>ValkeySaver</code> adds persistent checkpointing backed by Valkey:</p>
@@ -32,104 +37,108 @@
 <li><strong>Built-in TTL</strong> — sessions auto-expire, no cleanup jobs</li>
 <li><strong>ElastiCache ready</strong> — same code works locally and in production</li>
 </ul>
-
 <h2>Prerequisites</h2>
 <ul>
 <li>Docker installed</li>
 <li>Python 3.10+</li>
 </ul>
-
 <h2>Step 1: Start Valkey</h2>
-<pre><code>docker run -d --name valkey -p 6379:6379 valkey/valkey-bundle:latest</code></pre>
+<pre><code>docker run -d --name valkey -p 6379:6379 valkey/valkey-bundle:latest
+</code></pre>
 <p>The <code>valkey-bundle</code> image includes JSON and Search modules needed for ValkeyStore. Verify:</p>
 <pre><code>docker exec valkey valkey-cli PING
-<span class="comment"># PONG</span></code></pre>
-
+# PONG
+</code></pre>
 <h2>Step 2: Install the Package</h2>
-<pre><code>pip install 'langgraph-checkpoint-aws[valkey]' langchain-aws</code></pre>
+<pre><code>pip install &#39;langgraph-checkpoint-aws[valkey]&#39; langchain-aws
+</code></pre>
 <p>This installs <code>ValkeySaver</code>, <code>ValkeyStore</code>, <code>ValkeyCache</code>, and the Bedrock integrations.</p>
-
 <h2>Step 3: Understand the Data Model</h2>
 <p><code>ValkeySaver</code> stores each checkpoint as a JSON document in Valkey:</p>
-<pre><code><span class="comment"># Key format: checkpoint:{thread_id}:{checkpoint_ns}:{checkpoint_id}</span>
-<span class="comment"># Each checkpoint contains:</span>
+<pre><code># Key format: checkpoint:{thread_id}:{checkpoint_ns}:{checkpoint_id}
+# Each checkpoint contains:
 {
-    "v": 1,
-    "ts": "2026-03-12T10:00:00+00:00",
-    "channel_values": {"messages": [...]},
-    "channel_versions": {"__start__": 2, "messages": 3},
-    "versions_seen": {...}
-}</code></pre>
-
-<div class="callout">
+    &quot;v&quot;: 1,
+    &quot;ts&quot;: &quot;2026-03-12T10:00:00+00:00&quot;,
+    &quot;channel_values&quot;: {&quot;messages&quot;: [...]},
+    &quot;channel_versions&quot;: {&quot;__start__&quot;: 2, &quot;messages&quot;: 3},
+    &quot;versions_seen&quot;: {...}
+}
+</code></pre>
 <p><strong>Under the Hood:</strong> <code>ValkeySaver</code> uses Valkey JSON (<code>JSON.SET</code>) for structured storage and RediSearch (<code>FT.CREATE</code>, <code>FT.SEARCH</code>) for indexing checkpoints by thread ID and namespace. TTL is applied via <code>EXPIRE</code>.</p>
-</div>
-
 <h2>Step 4: Persist a LangGraph Agent</h2>
-<pre><code><span class="keyword">from</span> langgraph.graph <span class="keyword">import</span> StateGraph, MessagesState
-<span class="keyword">from</span> langgraph_checkpoint_aws <span class="keyword">import</span> ValkeySaver
-<span class="keyword">from</span> langchain_aws <span class="keyword">import</span> ChatBedrockConverse
-<span class="keyword">from</span> langchain_core.messages <span class="keyword">import</span> HumanMessage
+<pre><code>from langgraph.graph import StateGraph, MessagesState
+from langgraph_checkpoint_aws import ValkeySaver
+from langchain_aws import ChatBedrockConverse
+from langchain_core.messages import HumanMessage
 
 
-<span class="comment"># 1. Create a simple chatbot graph</span>
+# 1. Create a simple chatbot graph
 model = ChatBedrockConverse(
-    model=<span class="string">"us.anthropic.claude-sonnet-4-20250514-v1:0"</span>,
-    region_name=<span class="string">"us-west-2"</span>,
+    model=&quot;us.anthropic.claude-sonnet-4-20250514-v1:0&quot;,
+    region_name=&quot;us-west-2&quot;,
 )
 
-<span class="keyword">def</span> <span class="func">chatbot</span>(state: MessagesState):
-    <span class="keyword">return</span> {<span class="string">"messages"</span>: [model.invoke(state[<span class="string">"messages"</span>])]}
+def chatbot(state: MessagesState):
+    return {&quot;messages&quot;: [model.invoke(state[&quot;messages&quot;])]}
 
 builder = StateGraph(MessagesState)
-builder.add_node(<span class="string">"chatbot"</span>, chatbot)
-builder.set_entry_point(<span class="string">"chatbot"</span>)
-builder.set_finish_point(<span class="string">"chatbot"</span>)
+builder.add_node(&quot;chatbot&quot;, chatbot)
+builder.set_entry_point(&quot;chatbot&quot;)
+builder.set_finish_point(&quot;chatbot&quot;)
 
-<span class="comment"># 2. Compile with ValkeySaver — this is the key line</span>
-<span class="keyword">with</span> ValkeySaver.from_conn_string(
-    <span class="string">"valkey://localhost:6379"</span>,
-    ttl_seconds=<span class="num">3600</span>,
-) <span class="keyword">as</span> checkpointer:
+# 2. Compile with ValkeySaver — this is the key line
+with ValkeySaver.from_conn_string(
+    &quot;valkey://localhost:6379&quot;,
+    ttl_seconds=3600,
+) as checkpointer:
     graph = builder.compile(checkpointer=checkpointer)
 
-    <span class="comment"># 3. Invoke with a thread ID</span>
-    config = {<span class="string">"configurable"</span>: {<span class="string">"thread_id"</span>: <span class="string">"session-1"</span>}}
+    # 3. Invoke with a thread ID
+    config = {&quot;configurable&quot;: {&quot;thread_id&quot;: &quot;session-1&quot;}}
     result = graph.invoke(
-        {<span class="string">"messages"</span>: [HumanMessage(content=<span class="string">"What is Valkey?"</span>)]},
+        {&quot;messages&quot;: [HumanMessage(content=&quot;What is Valkey?&quot;)]},
         config,
     )
-    print(result[<span class="string">"messages"</span>][-<span class="num">1</span>].content)
+    print(result[&quot;messages&quot;][-1].content)
 
-    <span class="comment"># 4. Continue the conversation — state is persisted!</span>
+    # 4. Continue the conversation — state is persisted!
     result = graph.invoke(
-        {<span class="string">"messages"</span>: [HumanMessage(content=<span class="string">"How fast is it?"</span>)]},
+        {&quot;messages&quot;: [HumanMessage(content=&quot;How fast is it?&quot;)]},
         config,
     )
-    <span class="comment"># The agent remembers the previous message about Valkey</span>
-    print(result[<span class="string">"messages"</span>][-<span class="num">1</span>].content)</code></pre>
-
+    # The agent remembers the previous message about Valkey
+    print(result[&quot;messages&quot;][-1].content)
+</code></pre>
 <h2>Step 5: Verify Persistence</h2>
 <p>Stop and restart your script — the conversation state is still in Valkey:</p>
-<pre><code><span class="comment"># In a NEW Python process:</span>
-<span class="keyword">with</span> ValkeySaver.from_conn_string(<span class="string">"valkey://localhost:6379"</span>) <span class="keyword">as</span> checkpointer:
+<pre><code># In a NEW Python process:
+with ValkeySaver.from_conn_string(&quot;valkey://localhost:6379&quot;) as checkpointer:
     graph = builder.compile(checkpointer=checkpointer)
-    config = {<span class="string">"configurable"</span>: {<span class="string">"thread_id"</span>: <span class="string">"session-1"</span>}}
+    config = {&quot;configurable&quot;: {&quot;thread_id&quot;: &quot;session-1&quot;}}
 
-    <span class="comment"># List checkpoints for this thread</span>
-    <span class="keyword">for</span> cp <span class="keyword">in</span> checkpointer.list(config):
-        print(cp.metadata)  <span class="comment"># Shows previous conversation</span></code></pre>
-
-<div class="callout">
+    # List checkpoints for this thread
+    for cp in checkpointer.list(config):
+        print(cp.metadata)  # Shows previous conversation
+</code></pre>
 <p><strong>Valkey Commands Fired:</strong></p>
-<pre><code>JSON.SET checkpoint:session-1:__empty__:abc123 $ '{...}'
+<pre><code>JSON.SET checkpoint:session-1:__empty__:abc123 $ &#39;{...}&#39;
 EXPIRE checkpoint:session-1:__empty__:abc123 3600
-FT.SEARCH checkpoints_idx '@thread_id:{session-1}' SORTBY ts DESC LIMIT 0 1</code></pre>
-</div>
-
+FT.SEARCH checkpoints_idx &#39;@thread_id:{session-1}&#39; SORTBY ts DESC LIMIT 0 1
+</code></pre>
 <h2>Next Steps</h2>
-<p>You now have a LangGraph agent with persistent state. Next, let's add LLM response caching to cut costs and latency.</p>
-<div style="margin-top:24px"><a href="02-llm-caching.html" style="color:var(--g1);font-weight:600">Next: 02 LLM Response Caching →</a></div>
+<p>You now have a LangGraph agent with persistent state. Next, let&#39;s add LLM response caching to cut costs and latency.</p>
+<p><a href="02-llm-caching.html">Next: 02 LLM Response Caching →</a></p>
+
+
+<div class="nav-prev-next">
+<div></div>
+<a href="02-llm-caching.html" class="next"><span class="label">Next →</span><span class="title">02 — LLM Caching</span></a>
+</div>
 </article>
+<button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg></button>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<script>function toggleTheme(){var b=document.body,l=b.classList.toggle("light");localStorage.setItem("theme",l?"light":"dark")}(function(){if(localStorage.getItem("theme")==="light")document.body.classList.add("light")})()</script>
 </body>
 </html>

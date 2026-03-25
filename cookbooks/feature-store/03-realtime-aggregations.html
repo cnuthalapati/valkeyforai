@@ -3,207 +3,256 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>03 — Real-Time Aggregations — Valkey for AI</title>
+<title>03 — Real-time Aggregations — Valkey for AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../cookbook.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<style>
+body.light .nav{background:rgba(255,255,255,.9)!important}
+body.light pre{background:rgba(0,0,0,.03)!important;border-color:rgba(0,0,0,.08)!important}
+body.light code{color:#1d1d1f}
+body.light .callout{background:rgba(0,0,0,.02);border-color:rgba(0,0,0,.08)}
+body.light table{border-color:rgba(0,0,0,.08)}
+body.light th{background:rgba(0,0,0,.04)}
+body.light td{border-color:rgba(0,0,0,.06)}
+body.light{--bg:#fff;--bg-elevated:#f5f5f7;--bg-card:rgba(0,0,0,.03);--bg-card-hover:rgba(0,0,0,.06);--brd:rgba(0,0,0,.08);--t1:#1d1d1f;--t2:rgba(29,29,31,.6);--t3:rgba(29,29,31,.4)}
+.theme-toggle{background:rgba(128,128,128,.12);border:1px solid rgba(128,128,128,.2);border-radius:100px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:fixed;top:18px;right:24px;z-index:1001}
+pre{position:relative}
+pre code.hljs{background:transparent!important;padding:0}
+</style>
 </head>
 <body>
-<nav class="nav"><div class="nav-inner">
-<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
-<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/feature-store/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div>
-</div></nav>
-
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/#frameworks">Frameworks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
 <article>
-<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/feature-store/">Feature Store</a> → 03 Real-Time Aggregations</div>
+<div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/feature-store/">Feature Store</a> → 03 Aggregations</div>
 <div class="meta"><span class="diff-medium">Intermediate</span><span class="lang">Python</span><span class="lang">~20 min</span></div>
+<h1>Real-time Aggregations</h1>
 
-<h1>Real-Time <span class="gradient">Aggregations</span></h1>
-<p class="lead">Compute sliding-window counts, rolling averages, and unique-count features directly in Valkey. No batch jobs, no Spark — just atomic Valkey commands with sub-millisecond latency.</p>
 
 <h2>Why In-Valkey Aggregations?</h2>
-<p>Traditional feature stores compute aggregations in batch (Spark, Flink) and write results to the online store. But for fraud detection, recommendation ranking, and real-time personalization, you need features that reflect the <em>last few minutes</em>, not the last ETL run. Valkey's atomic data structures make this possible:</p>
+<p>Traditional feature stores compute aggregations in batch (Spark, Flink) and write results to the online store. But for fraud detection, recommendation ranking, and real-time personalization, you need features that reflect the <em>last few minutes</em> , not the last ETL run. Valkey&#39;s atomic data structures make this possible:</p>
 <ul>
 <li><strong>Sorted Sets</strong> — Time-windowed event counts and sliding windows</li>
 <li><strong>INCR / INCRBYFLOAT</strong> — Running counts and sums</li>
 <li><strong>HyperLogLog</strong> — Approximate unique counts (cardinality)</li>
 </ul>
-
 <h2>Pattern 1: Sliding Window Count</h2>
-<p>Count events in a sliding time window — e.g., "transactions in the last hour."</p>
+<p>Count events in a sliding time window — e.g., &quot;transactions in the last hour.&quot;</p>
 <p>We use a <strong>Sorted Set</strong> where each member is a unique event ID and the score is the timestamp:</p>
+<pre><code>import redis
+import time
+import uuid
 
-<pre><code><span class="keyword">import</span> redis
-<span class="keyword">import</span> time
-<span class="keyword">import</span> uuid
+client = redis.Redis(host=&quot;localhost&quot;, port=6379, decode_responses=True)
 
-client = redis.Redis(host=<span class="string">"localhost"</span>, port=<span class="num">6379</span>, decode_responses=<span class="keyword">True</span>)
-
-<span class="keyword">def</span> <span class="func">record_event</span>(user_id: str, window_seconds: int = <span class="num">3600</span>):
-    <span class="string">"""Record an event and return the count in the sliding window."""</span>
-    key = <span class="string">f"fs:agg:txn_count:{user_id}"</span>
+def record_event(user_id: str, window_seconds: int = 3600):
+    &quot;&quot;&quot;Record an event and return the count in the sliding window.&quot;&quot;&quot;
+    key = f&quot;fs:agg:txn_count:{user_id}&quot;
     now = time.time()
     cutoff = now - window_seconds
 
-    pipe = client.pipeline(transaction=<span class="keyword">True</span>)
+    pipe = client.pipeline(transaction=True)
 
-    <span class="comment"># 1. Add this event with timestamp as score</span>
-    pipe.zadd(key, {<span class="func">str</span>(uuid.uuid4()): now})
+    # 1. Add this event with timestamp as score
+    pipe.zadd(key, {str(uuid.uuid4()): now})
 
-    <span class="comment"># 2. Remove events outside the window</span>
-    pipe.zremrangebyscore(key, <span class="string">"-inf"</span>, cutoff)
+    # 2. Remove events outside the window
+    pipe.zremrangebyscore(key, &quot;-inf&quot;, cutoff)
 
-    <span class="comment"># 3. Count remaining events in window</span>
+    # 3. Count remaining events in window
     pipe.zcard(key)
 
-    <span class="comment"># 4. Set TTL so the key self-cleans if user goes inactive</span>
-    pipe.expire(key, window_seconds * <span class="num">2</span>)
+    # 4. Set TTL so the key self-cleans if user goes inactive
+    pipe.expire(key, window_seconds * 2)
 
     results = pipe.execute()
-    count = results[<span class="num">2</span>]  <span class="comment"># zcard result</span>
+    count = results[2]  # zcard result
 
-    <span class="keyword">return</span> count
+    return count
 
-<span class="comment"># Usage</span>
-<span class="keyword">for</span> i <span class="keyword">in</span> <span class="func">range</span>(<span class="num">5</span>):
-    count = record_event(<span class="string">"user_001"</span>, window_seconds=<span class="num">60</span>)
-    <span class="func">print</span>(<span class="string">f"Transactions in last 60s: {count}"</span>)
-<span class="comment"># Transactions in last 60s: 1</span>
-<span class="comment"># Transactions in last 60s: 2</span>
-<span class="comment"># Transactions in last 60s: 3</span>
-<span class="comment"># ...</span></code></pre>
-
-<div class="callout">
+# Usage
+for i in range(5):
+    count = record_event(&quot;user_001&quot;, window_seconds=60)
+    print(f&quot;Transactions in last 60s: {count}&quot;)
+# Transactions in last 60s: 1
+# Transactions in last 60s: 2
+# Transactions in last 60s: 3
+# ...
+</code></pre>
 <p><strong>How it works:</strong> <code>ZADD</code> adds the event, <code>ZREMRANGEBYSCORE</code> prunes expired events, <code>ZCARD</code> counts the remainder. All three commands execute atomically in one pipeline round-trip (~0.2ms).</p>
-</div>
-
 <h2>Pattern 2: Running Average</h2>
-<p>Track a rolling average — e.g., "average transaction amount" — using two atomic counters:</p>
+<p>Track a rolling average — e.g., &quot;average transaction amount&quot; — using two atomic counters:</p>
+<pre><code>def update_running_average(user_id: str, amount: float):
+    &quot;&quot;&quot;Update running average and return new value.&quot;&quot;&quot;
+    sum_key = f&quot;fs:agg:txn_sum:{user_id}&quot;
+    count_key = f&quot;fs:agg:txn_count_total:{user_id}&quot;
 
-<pre><code><span class="keyword">def</span> <span class="func">update_running_average</span>(user_id: str, amount: float):
-    <span class="string">"""Update running average and return new value."""</span>
-    sum_key = <span class="string">f"fs:agg:txn_sum:{user_id}"</span>
-    count_key = <span class="string">f"fs:agg:txn_count_total:{user_id}"</span>
-
-    pipe = client.pipeline(transaction=<span class="keyword">True</span>)
+    pipe = client.pipeline(transaction=True)
     pipe.incrbyfloat(sum_key, amount)
     pipe.incr(count_key)
-    pipe.expire(sum_key, <span class="num">86400</span>)   <span class="comment"># 24h TTL</span>
-    pipe.expire(count_key, <span class="num">86400</span>)
+    pipe.expire(sum_key, 86400)   # 24h TTL
+    pipe.expire(count_key, 86400)
     results = pipe.execute()
 
-    total_sum = <span class="func">float</span>(results[<span class="num">0</span>])
-    total_count = <span class="func">int</span>(results[<span class="num">1</span>])
-    avg = total_sum / total_count <span class="keyword">if</span> total_count > <span class="num">0</span> <span class="keyword">else</span> <span class="num">0</span>
+    total_sum = float(results[0])
+    total_count = int(results[1])
+    avg = total_sum / total_count if total_count &gt; 0 else 0
 
-    <span class="keyword">return</span> {<span class="string">"sum"</span>: total_sum, <span class="string">"count"</span>: total_count, <span class="string">"average"</span>: <span class="func">round</span>(avg, <span class="num">2</span>)}
+    return {&quot;sum&quot;: total_sum, &quot;count&quot;: total_count, &quot;average&quot;: round(avg, 2)}
 
-<span class="comment"># Usage</span>
-amounts = [<span class="num">25.00</span>, <span class="num">150.00</span>, <span class="num">12.50</span>, <span class="num">89.99</span>]
-<span class="keyword">for</span> amt <span class="keyword">in</span> amounts:
-    result = update_running_average(<span class="string">"user_001"</span>, amt)
-    <span class="func">print</span>(<span class="string">f"${amt:>7.2f} → avg=${result['average']}"</span>)
-<span class="comment"># $ 25.00 → avg=$25.0</span>
-<span class="comment"># $150.00 → avg=$87.5</span>
-<span class="comment"># $ 12.50 → avg=$62.5</span>
-<span class="comment"># $ 89.99 → avg=$69.37</span></code></pre>
-
+# Usage
+amounts = [25.00, 150.00, 12.50, 89.99]
+for amt in amounts:
+    result = update_running_average(&quot;user_001&quot;, amt)
+    print(f&quot;${amt:&gt;7.2f} → avg=${result[&#39;average&#39;]}&quot;)
+# $ 25.00 → avg=$25.0
+# $150.00 → avg=$87.5
+# $ 12.50 → avg=$62.5
+# $ 89.99 → avg=$69.37
+</code></pre>
 <table>
-<tr><th>Operation</th><th>Valkey Command</th><th>Latency</th></tr>
-<tr><td>Increment sum</td><td><code>INCRBYFLOAT</code></td><td>~0.1ms</td></tr>
-<tr><td>Increment count</td><td><code>INCR</code></td><td>~0.1ms</td></tr>
-<tr><td>Pipeline (both + TTL)</td><td>1 round-trip</td><td>~0.2ms</td></tr>
-</table>
-
+<thead>
+<tr>
+<th>Operation</th>
+<th>Valkey Command</th>
+<th>Latency</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Increment sum</td>
+<td><code>INCRBYFLOAT</code></td>
+<td>~0.1ms</td>
+</tr>
+<tr>
+<td>Increment count</td>
+<td><code>INCR</code></td>
+<td>~0.1ms</td>
+</tr>
+<tr>
+<td>Pipeline (both + TTL)</td>
+<td>1 round-trip</td>
+<td>~0.2ms</td>
+</tr>
+</tbody></table>
 <h2>Pattern 3: Unique Count (Cardinality)</h2>
-<p>Count unique values — e.g., "unique merchants this user transacted with in 24h." <strong>HyperLogLog</strong> gives you approximate cardinality using only 12KB of memory per counter:</p>
+<p>Count unique values — e.g., &quot;unique merchants this user transacted with in 24h.&quot; <strong>HyperLogLog</strong> gives you approximate cardinality using only 12KB of memory per counter:</p>
+<pre><code>def record_unique_merchant(user_id: str, merchant_id: str):
+    &quot;&quot;&quot;Track unique merchants and return approximate count.&quot;&quot;&quot;
+    key = f&quot;fs:agg:unique_merchants:{user_id}&quot;
 
-<pre><code><span class="keyword">def</span> <span class="func">record_unique_merchant</span>(user_id: str, merchant_id: str):
-    <span class="string">"""Track unique merchants and return approximate count."""</span>
-    key = <span class="string">f"fs:agg:unique_merchants:{user_id}"</span>
-
-    pipe = client.pipeline(transaction=<span class="keyword">True</span>)
-    pipe.pfadd(key, merchant_id)     <span class="comment"># Add to HyperLogLog</span>
-    pipe.pfcount(key)                <span class="comment"># Get approximate count</span>
-    pipe.expire(key, <span class="num">86400</span>)          <span class="comment"># 24h TTL</span>
+    pipe = client.pipeline(transaction=True)
+    pipe.pfadd(key, merchant_id)     # Add to HyperLogLog
+    pipe.pfcount(key)                # Get approximate count
+    pipe.expire(key, 86400)          # 24h TTL
     results = pipe.execute()
 
-    <span class="keyword">return</span> results[<span class="num">1</span>]  <span class="comment"># pfcount result</span>
+    return results[1]  # pfcount result
 
-<span class="comment"># Usage</span>
-merchants = [<span class="string">"amazon"</span>, <span class="string">"walmart"</span>, <span class="string">"amazon"</span>, <span class="string">"target"</span>, <span class="string">"starbucks"</span>, <span class="string">"amazon"</span>]
-<span class="keyword">for</span> m <span class="keyword">in</span> merchants:
-    count = record_unique_merchant(<span class="string">"user_001"</span>, m)
-    <span class="func">print</span>(<span class="string">f"After {m}: {count} unique merchants"</span>)
-<span class="comment"># After amazon: 1 unique merchants</span>
-<span class="comment"># After walmart: 2 unique merchants</span>
-<span class="comment"># After amazon: 2 unique merchants   ← duplicate, no change</span>
-<span class="comment"># After target: 3 unique merchants</span>
-<span class="comment"># After starbucks: 4 unique merchants</span>
-<span class="comment"># After amazon: 4 unique merchants   ← duplicate, no change</span></code></pre>
-
-<div class="callout">
+# Usage
+merchants = [&quot;amazon&quot;, &quot;walmart&quot;, &quot;amazon&quot;, &quot;target&quot;, &quot;starbucks&quot;, &quot;amazon&quot;]
+for m in merchants:
+    count = record_unique_merchant(&quot;user_001&quot;, m)
+    print(f&quot;After {m}: {count} unique merchants&quot;)
+# After amazon: 1 unique merchants
+# After walmart: 2 unique merchants
+# After amazon: 2 unique merchants   ← duplicate, no change
+# After target: 3 unique merchants
+# After starbucks: 4 unique merchants
+# After amazon: 4 unique merchants   ← duplicate, no change
+</code></pre>
 <p><strong>HyperLogLog trade-off:</strong> Uses only 12KB regardless of cardinality (vs. storing all values in a Set). The count has ~0.81% standard error — perfectly acceptable for ML features where approximate cardinality is fine.</p>
-</div>
-
 <h2>Pattern 4: Materialize Aggregations to Feature Store</h2>
 <p>The patterns above compute aggregations on the fly. To serve them as regular features, materialize back to the feature store Hash:</p>
+<pre><code>def materialize_user_features(user_id: str):
+    &quot;&quot;&quot;Compute aggregations and write to the feature store Hash.&quot;&quot;&quot;
+    pipe = client.pipeline(transaction=False)
 
-<pre><code><span class="keyword">def</span> <span class="func">materialize_user_features</span>(user_id: str):
-    <span class="string">"""Compute aggregations and write to the feature store Hash."""</span>
-    pipe = client.pipeline(transaction=<span class="keyword">False</span>)
-
-    <span class="comment"># Read aggregation state</span>
+    # Read aggregation state
     now = time.time()
-    pipe.zcount(<span class="string">f"fs:agg:txn_count:{user_id}"</span>, now - <span class="num">3600</span>, now)
-    pipe.get(<span class="string">f"fs:agg:txn_sum:{user_id}"</span>)
-    pipe.get(<span class="string">f"fs:agg:txn_count_total:{user_id}"</span>)
-    pipe.pfcount(<span class="string">f"fs:agg:unique_merchants:{user_id}"</span>)
+    pipe.zcount(f&quot;fs:agg:txn_count:{user_id}&quot;, now - 3600, now)
+    pipe.get(f&quot;fs:agg:txn_sum:{user_id}&quot;)
+    pipe.get(f&quot;fs:agg:txn_count_total:{user_id}&quot;)
+    pipe.pfcount(f&quot;fs:agg:unique_merchants:{user_id}&quot;)
     results = pipe.execute()
 
-    txn_count_1h = results[<span class="num">0</span>] <span class="keyword">or</span> <span class="num">0</span>
-    txn_sum = <span class="func">float</span>(results[<span class="num">1</span>] <span class="keyword">or</span> <span class="num">0</span>)
-    txn_total = <span class="func">int</span>(results[<span class="num">2</span>] <span class="keyword">or</span> <span class="num">0</span>)
-    unique_merchants = results[<span class="num">3</span>] <span class="keyword">or</span> <span class="num">0</span>
+    txn_count_1h = results[0] or 0
+    txn_sum = float(results[1] or 0)
+    txn_total = int(results[2] or 0)
+    unique_merchants = results[3] or 0
 
-    avg_amount = txn_sum / txn_total <span class="keyword">if</span> txn_total > <span class="num">0</span> <span class="keyword">else</span> <span class="num">0</span>
+    avg_amount = txn_sum / txn_total if txn_total &gt; 0 else 0
 
-    <span class="comment"># Write to feature store Hash</span>
-    feature_key = <span class="string">f"fs:v1:user_risk_profile:{user_id}"</span>
+    # Write to feature store Hash
+    feature_key = f&quot;fs:v1:user_risk_profile:{user_id}&quot;
     features = {
-        <span class="string">"txn_count_1h"</span>: <span class="func">str</span>(txn_count_1h),
-        <span class="string">"avg_txn_amount"</span>: <span class="func">str</span>(<span class="func">round</span>(avg_amount, <span class="num">2</span>)),
-        <span class="string">"unique_merchants_24h"</span>: <span class="func">str</span>(unique_merchants),
-        <span class="string">"_updated_at"</span>: <span class="func">str</span>(now),
+        &quot;txn_count_1h&quot;: str(txn_count_1h),
+        &quot;avg_txn_amount&quot;: str(round(avg_amount, 2)),
+        &quot;unique_merchants_24h&quot;: str(unique_merchants),
+        &quot;_updated_at&quot;: str(now),
     }
     client.hset(feature_key, mapping=features)
-    client.expire(feature_key, <span class="num">86400</span>)
+    client.expire(feature_key, 86400)
 
-    <span class="keyword">return</span> features</code></pre>
-
+    return features
+</code></pre>
 <h2>Data Structure Comparison</h2>
 <table>
-<tr><th>Feature Type</th><th>Valkey Data Structure</th><th>Command</th><th>Memory</th><th>Accuracy</th></tr>
-<tr><td>Event count (window)</td><td>Sorted Set</td><td><code>ZADD</code> + <code>ZCARD</code></td><td>~64 bytes/event</td><td>Exact</td></tr>
-<tr><td>Running sum</td><td>String (counter)</td><td><code>INCRBYFLOAT</code></td><td>~56 bytes</td><td>Exact</td></tr>
-<tr><td>Running count</td><td>String (counter)</td><td><code>INCR</code></td><td>~56 bytes</td><td>Exact</td></tr>
-<tr><td>Unique count</td><td>HyperLogLog</td><td><code>PFADD</code> + <code>PFCOUNT</code></td><td>12KB fixed</td><td>~0.81% error</td></tr>
-<tr><td>Max/Min value</td><td>Sorted Set</td><td><code>ZADD</code> + <code>ZRANGE</code></td><td>~64 bytes/event</td><td>Exact</td></tr>
-</table>
+<thead>
+<tr>
+<th>Feature Type</th>
+<th>Valkey Data Structure</th>
+<th>Command</th>
+<th>Memory</th>
+<th>Accuracy</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Event count (window)</td>
+<td>Sorted Set</td>
+<td><code>ZADD</code> + <code>ZCARD</code></td>
+<td>~64 bytes/event</td>
+<td>Exact</td>
+</tr>
+<tr>
+<td>Running sum</td>
+<td>String (counter)</td>
+<td><code>INCRBYFLOAT</code></td>
+<td>~56 bytes</td>
+<td>Exact</td>
+</tr>
+<tr>
+<td>Running count</td>
+<td>String (counter)</td>
+<td><code>INCR</code></td>
+<td>~56 bytes</td>
+<td>Exact</td>
+</tr>
+<tr>
+<td>Unique count</td>
+<td>HyperLogLog</td>
+<td><code>PFADD</code> + <code>PFCOUNT</code></td>
+<td>12KB fixed</td>
+<td>~0.81% error</td>
+</tr>
+<tr>
+<td>Max/Min value</td>
+<td>Sorted Set</td>
+<td><code>ZADD</code> + <code>ZRANGE</code></td>
+<td>~64 bytes/event</td>
+<td>Exact</td>
+</tr>
+</tbody></table>
+<p><strong>What&#39;s Next:</strong> Learn how to build real-time streaming feature pipelines with Valkey Streams — publish feature updates from any service and have them materialize instantly.</p>
 
-<div class="callout">
-<p><strong>What's Next:</strong> Learn how to build real-time streaming feature pipelines with Valkey Streams — publish feature updates from any service and have them materialize instantly.</p>
-</div>
 
 <div class="nav-prev-next">
-<a href="02-online-serving.html" class="prev">
-<span class="label">← Previous</span>
-<span class="title">02 — Online Feature Serving</span>
-</a>
-<a href="04-streaming-updates.html" class="next">
-<span class="label">Next →</span>
-<span class="title">04 — Streaming Updates</span>
-</a>
+<a href="02-online-serving.html" class="prev"><span class="label">← Previous</span><span class="title">02 — Online Serving</span></a>
+<a href="04-streaming-updates.html" class="next"><span class="label">Next →</span><span class="title">04 — Streaming</span></a>
 </div>
 </article>
+<button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg></button>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<script>function toggleTheme(){var b=document.body,l=b.classList.toggle("light");localStorage.setItem("theme",l?"light":"dark")}(function(){if(localStorage.getItem("theme")==="light")document.body.classList.add("light")})()</script>
 </body>
 </html>

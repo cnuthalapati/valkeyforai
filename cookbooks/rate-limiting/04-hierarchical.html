@@ -3,22 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>04 — Hierarchical Rate Limits — Valkey for AI</title>
+<title>04 — Hierarchical Rate Limiting — Valkey for AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../cookbook.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<style>
+body.light .nav{background:rgba(255,255,255,.9)!important}
+body.light pre{background:rgba(0,0,0,.03)!important;border-color:rgba(0,0,0,.08)!important}
+body.light code{color:#1d1d1f}
+body.light .callout{background:rgba(0,0,0,.02);border-color:rgba(0,0,0,.08)}
+body.light table{border-color:rgba(0,0,0,.08)}
+body.light th{background:rgba(0,0,0,.04)}
+body.light td{border-color:rgba(0,0,0,.06)}
+body.light{--bg:#fff;--bg-elevated:#f5f5f7;--bg-card:rgba(0,0,0,.03);--bg-card-hover:rgba(0,0,0,.06);--brd:rgba(0,0,0,.08);--t1:#1d1d1f;--t2:rgba(29,29,31,.6);--t3:rgba(29,29,31,.4)}
+.theme-toggle{background:rgba(128,128,128,.12);border:1px solid rgba(128,128,128,.2);border-radius:100px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;position:fixed;top:18px;right:24px;z-index:1001}
+pre{position:relative}
+pre code.hljs{background:transparent!important;padding:0}
+</style>
 </head>
 <body>
-<nav class="nav"><div class="nav-inner">
-<a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a>
-<div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/cookbooks/rate-limiting/">Cookbooks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div>
-</div></nav>
-
+<nav class="nav"><div class="nav-inner"><a href="/" class="nav-logo"><img src="/valkey-logo.svg" alt="Valkey"><span class="accent">for ai</span></a><div class="nav-links"><a href="/#use-cases">Use Cases</a><a href="/#frameworks">Frameworks</a><a href="https://github.com/meet-bhagdev/valkeyforai/tree/main" target="_blank">GitHub</a></div></div></nav>
 <article>
 <div class="breadcrumb"><a href="/">Home</a> → <a href="/cookbooks/rate-limiting/">Rate Limiting</a> → 04 Hierarchical</div>
-<div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~25 min</span></div>
+<div class="meta"><span class="diff-hard">Advanced</span><span class="lang">Python</span><span class="lang">~20 min</span></div>
+<h1>Hierarchical Rate Limiting</h1>
 
-<h1>Hierarchical <span class="gradient">Rate Limits</span></h1>
-<p class="lead">Enterprise AI platforms need cascading limits: Organization → Team → User → Agent → Model. Every tier must pass for a request to be allowed.</p>
 
 <h2>The Problem</h2>
 <pre><code>Acme Corp (org):     1,000,000 tokens/hour
@@ -29,81 +38,105 @@
   │   └─ bob:          100,000 tokens/hour
   └─ Marketing:       200,000 tokens/hour
 
-Alice's agent-1 calls GPT-4. We check:
+Alice&#39;s agent-1 calls GPT-4. We check:
   1. Is the org under 1M tokens? ✅
   2. Is engineering under 500K? ✅
   3. Is alice under 100K? ✅
-  4. Is agent-1 under 25K? ❌ → DENIED</code></pre>
-
+  4. Is agent-1 under 25K? ❌ → DENIED
+</code></pre>
 <h2>Step 1: Define Tiers</h2>
-<pre><code><span class="keyword">from</span> dataclasses <span class="keyword">import</span> dataclass
+<pre><code>from dataclasses import dataclass
 
 @dataclass
-<span class="keyword">class</span> <span class="func">Tier</span>:
-    name: str           <span class="comment"># "org", "team", "user", "agent", "model"</span>
-    identifier: str     <span class="comment"># "acme-corp", "engineering", "alice"</span>
+class Tier:
+    name: str           # &quot;org&quot;, &quot;team&quot;, &quot;user&quot;, &quot;agent&quot;, &quot;model&quot;
+    identifier: str     # &quot;acme-corp&quot;, &quot;engineering&quot;, &quot;alice&quot;
     max_requests: int
     max_tokens: int
     window_seconds: int
 
 tiers = [
-    Tier(<span class="string">"org"</span>, <span class="string">"acme-corp"</span>, <span class="num">10000</span>, <span class="num">1_000_000</span>, <span class="num">3600</span>),
-    Tier(<span class="string">"team"</span>, <span class="string">"engineering"</span>, <span class="num">5000</span>, <span class="num">500_000</span>, <span class="num">3600</span>),
-    Tier(<span class="string">"user"</span>, <span class="string">"alice"</span>, <span class="num">1000</span>, <span class="num">100_000</span>, <span class="num">3600</span>),
-    Tier(<span class="string">"agent"</span>, <span class="string">"agent-research-1"</span>, <span class="num">200</span>, <span class="num">25_000</span>, <span class="num">3600</span>),
-]</code></pre>
-
+    Tier(&quot;org&quot;, &quot;acme-corp&quot;, 10000, 1_000_000, 3600),
+    Tier(&quot;team&quot;, &quot;engineering&quot;, 5000, 500_000, 3600),
+    Tier(&quot;user&quot;, &quot;alice&quot;, 1000, 100_000, 3600),
+    Tier(&quot;agent&quot;, &quot;agent-research-1&quot;, 200, 25_000, 3600),
+]
+</code></pre>
 <h2>Step 2: Cascading Check with Pipeline</h2>
 <p>The key insight: use a <strong>Valkey pipeline</strong> to check all tiers in a single round-trip:</p>
-<pre><code><span class="keyword">def</span> <span class="func">hierarchical_check</span>(tiers: list, tokens: int) -> dict:
+<pre><code>def hierarchical_check(tiers: list, tokens: int) -&gt; dict:
     now = time.time()
 
-    <span class="comment"># Phase 1: Read all counters in one pipeline</span>
-    pipe = client.pipeline(transaction=<span class="keyword">False</span>)
-    <span class="keyword">for</span> tier <span class="keyword">in</span> tiers:
-        window_num = <span class="func">int</span>(now // tier.window_seconds)
-        pipe.get(<span class="string">f"hier:{tier.name}:{tier.identifier}:req:{window_num}"</span>)
-        pipe.get(<span class="string">f"hier:{tier.name}:{tier.identifier}:tok:{window_num}"</span>)
+    # Phase 1: Read all counters in one pipeline
+    pipe = client.pipeline(transaction=False)
+    for tier in tiers:
+        window_num = int(now // tier.window_seconds)
+        pipe.get(f&quot;hier:{tier.name}:{tier.identifier}:req:{window_num}&quot;)
+        pipe.get(f&quot;hier:{tier.name}:{tier.identifier}:tok:{window_num}&quot;)
     results = pipe.execute()
 
-    <span class="comment"># Phase 2: Check each tier</span>
-    blocked_by = <span class="keyword">None</span>
-    <span class="keyword">for</span> i, tier <span class="keyword">in</span> <span class="func">enumerate</span>(tiers):
-        current_req = <span class="func">int</span>(results[i * <span class="num">2</span>] <span class="keyword">or</span> <span class="num">0</span>)
-        current_tok = <span class="func">int</span>(results[i * <span class="num">2</span> + <span class="num">1</span>] <span class="keyword">or</span> <span class="num">0</span>)
-        <span class="keyword">if</span> current_req + <span class="num">1</span> > tier.max_requests <span class="keyword">or</span> current_tok + tokens > tier.max_tokens:
+    # Phase 2: Check each tier
+    blocked_by = None
+    for i, tier in enumerate(tiers):
+        current_req = int(results[i * 2] or 0)
+        current_tok = int(results[i * 2 + 1] or 0)
+        if current_req + 1 &gt; tier.max_requests or current_tok + tokens &gt; tier.max_tokens:
             blocked_by = tier.name
-            <span class="keyword">break</span>
+            break
 
-    <span class="comment"># Phase 3: If allowed, increment all tiers atomically</span>
-    <span class="keyword">if not</span> blocked_by:
-        pipe = client.pipeline(transaction=<span class="keyword">True</span>)
-        <span class="keyword">for</span> tier <span class="keyword">in</span> tiers:
-            window_num = <span class="func">int</span>(now // tier.window_seconds)
-            req_key = <span class="string">f"hier:{tier.name}:{tier.identifier}:req:{window_num}"</span>
-            tok_key = <span class="string">f"hier:{tier.name}:{tier.identifier}:tok:{window_num}"</span>
+    # Phase 3: If allowed, increment all tiers atomically
+    if not blocked_by:
+        pipe = client.pipeline(transaction=True)
+        for tier in tiers:
+            window_num = int(now // tier.window_seconds)
+            req_key = f&quot;hier:{tier.name}:{tier.identifier}:req:{window_num}&quot;
+            tok_key = f&quot;hier:{tier.name}:{tier.identifier}:tok:{window_num}&quot;
             pipe.incr(req_key); pipe.expire(req_key, tier.window_seconds)
             pipe.incrby(tok_key, tokens); pipe.expire(tok_key, tier.window_seconds)
         pipe.execute()
 
-    <span class="keyword">return</span> {<span class="string">"allowed"</span>: blocked_by <span class="keyword">is None</span>, <span class="string">"blocked_by"</span>: blocked_by}</code></pre>
-
-<div class="callout">
+    return {&quot;allowed&quot;: blocked_by is None, &quot;blocked_by&quot;: blocked_by}
+</code></pre>
 <p><strong>Performance:</strong> Pipelines keep it to <strong>2 round trips</strong> regardless of tier count. 5 tiers = 10 GET + 20 INCR/EXPIRE = ~0.5ms total.</p>
-</div>
-
 <h2>Performance</h2>
 <table>
-<tr><th>Tiers</th><th>Pipeline Commands</th><th>Round Trips</th><th>Latency</th></tr>
-<tr><td>3</td><td>6 GET + 12 INCR/EXPIRE</td><td>2</td><td>~0.3ms</td></tr>
-<tr><td>5</td><td>10 GET + 20 INCR/EXPIRE</td><td>2</td><td>~0.5ms</td></tr>
-<tr><td>7</td><td>14 GET + 28 INCR/EXPIRE</td><td>2</td><td>~0.7ms</td></tr>
-</table>
+<thead>
+<tr>
+<th>Tiers</th>
+<th>Pipeline Commands</th>
+<th>Round Trips</th>
+<th>Latency</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>3</td>
+<td>6 GET + 12 INCR/EXPIRE</td>
+<td>2</td>
+<td>~0.3ms</td>
+</tr>
+<tr>
+<td>5</td>
+<td>10 GET + 20 INCR/EXPIRE</td>
+<td>2</td>
+<td>~0.5ms</td>
+</tr>
+<tr>
+<td>7</td>
+<td>14 GET + 28 INCR/EXPIRE</td>
+<td>2</td>
+<td>~0.7ms</td>
+</tr>
+</tbody></table>
+
 
 <div class="nav-prev-next">
-<a href="03-agent-limiting.html"><span class="label">← Previous</span><span class="title">03 — Agent Rate Limiting</span></a>
-<a href="05-cost-based.html" class="next"><span class="label">Next →</span><span class="title">05 — Cost-Based Limiting</span></a>
+<a href="03-agent-limiting.html" class="prev"><span class="label">← Previous</span><span class="title">03 — Agent Limiting</span></a>
+<a href="05-cost-based.html" class="next"><span class="label">Next →</span><span class="title">05 — Cost-Based</span></a>
 </div>
 </article>
+<button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg></button>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+<script>function toggleTheme(){var b=document.body,l=b.classList.toggle("light");localStorage.setItem("theme",l?"light":"dark")}(function(){if(localStorage.getItem("theme")==="light")document.body.classList.add("light")})()</script>
 </body>
 </html>
